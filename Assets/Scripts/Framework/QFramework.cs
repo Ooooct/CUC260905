@@ -36,6 +36,14 @@ namespace QFramework
     #region Architecture
 
     /// <summary>
+    /// 所有事件类型的统一空标记接口。
+    /// 事件消息（struct/class）都应实现该接口，便于统一管理和约束。
+    /// </summary>
+    public interface IEvent
+    {
+    }
+
+    /// <summary>
     /// QFramework 的架构入口。
     ///
     /// 架构负责统一管理三类长期服务：Model 保存数据，System 承担业务逻辑，
@@ -70,17 +78,17 @@ namespace QFramework
         /// <summary>发送一个 Query，并返回查询结果。</summary>
         TResult SendQuery<TResult>(IQuery<TResult> query);
 
-        /// <summary>发送一个无参 Event。Event 类型必须可以用无参构造函数创建。</summary>
-        void SendEvent<T>() where T : new();
+        /// <summary>发送一个无参 Event。Event 类型必须实现 IEvent 且可以用无参构造函数创建。</summary>
+        void SendEvent<T>() where T : IEvent, new();
 
         /// <summary>发送一个已经创建好的 Event 实例。</summary>
-        void SendEvent<T>(T e);
+        void SendEvent<T>(T e) where T : IEvent;
 
         /// <summary>注册一个类型事件监听器；priority 默认 0，数值越大越先触发，相同优先级下先注册的先触发。</summary>
-        IUnRegister RegisterEvent<T>(Action<T> onEvent, int priority = 0);
+        IUnRegister RegisterEvent<T>(Action<T> onEvent, int priority = 0) where T : IEvent;
 
         /// <summary>移除一个类型事件监听器。</summary>
-        void UnRegisterEvent<T>(Action<T> onEvent);
+        void UnRegisterEvent<T>(Action<T> onEvent) where T : IEvent;
 
         /// <summary>反初始化架构，释放架构持有的 Model、System 和 IOC 注册。</summary>
         void Deinit();
@@ -264,21 +272,22 @@ namespace QFramework
         private TypeEventSystem mTypeEventSystem = new TypeEventSystem();
 
         /// <summary>发送无参类型事件。</summary>
-        public void SendEvent<TEvent>() where TEvent : new() => mTypeEventSystem.Send<TEvent>();
+        public void SendEvent<TEvent>() where TEvent : IEvent, new() => mTypeEventSystem.Send<TEvent>();
 
         /// <summary>发送指定实例的类型事件。</summary>
-        public void SendEvent<TEvent>(TEvent e) => mTypeEventSystem.Send<TEvent>(e);
+        public void SendEvent<TEvent>(TEvent e) where TEvent : IEvent => mTypeEventSystem.Send<TEvent>(e);
 
         /// <summary>注册架构作用域内的类型事件；priority 默认 0，数值越大越先触发，相同优先级下先注册的先触发。</summary>
-        public IUnRegister RegisterEvent<TEvent>(Action<TEvent> onEvent, int priority = 0) =>
+        public IUnRegister RegisterEvent<TEvent>(Action<TEvent> onEvent, int priority = 0) where TEvent : IEvent =>
             mTypeEventSystem.Register<TEvent>(onEvent, priority);
 
         /// <summary>移除架构作用域内的类型事件监听。</summary>
-        public void UnRegisterEvent<TEvent>(Action<TEvent> onEvent) => mTypeEventSystem.UnRegister<TEvent>(onEvent);
+        public void UnRegisterEvent<TEvent>(Action<TEvent> onEvent) where TEvent : IEvent =>
+            mTypeEventSystem.UnRegister<TEvent>(onEvent);
     }
 
     /// <summary>为指定事件类型提供统一处理入口的接口。</summary>
-    public interface IOnEvent<T>
+    public interface IOnEvent<T> where T : IEvent
     {
         /// <summary>收到事件时调用。</summary>
         void OnEvent(T e);
@@ -288,11 +297,11 @@ namespace QFramework
     public static class OnGlobalEventExtension
     {
         /// <summary>注册当前对象的全局事件处理方法；priority 默认 0，数值越大越先触发，相同优先级下先注册的先触发。</summary>
-        public static IUnRegister RegisterEvent<T>(this IOnEvent<T> self, int priority = 0) where T : struct =>
+        public static IUnRegister RegisterEvent<T>(this IOnEvent<T> self, int priority = 0) where T : struct, IEvent =>
             TypeEventSystem.Global.Register<T>(self.OnEvent, priority);
 
         /// <summary>移除当前对象的全局事件处理方法。</summary>
-        public static void UnRegisterEvent<T>(this IOnEvent<T> self) where T : struct =>
+        public static void UnRegisterEvent<T>(this IOnEvent<T> self) where T : struct, IEvent =>
             TypeEventSystem.Global.UnRegister<T>(self.OnEvent);
     }
 
@@ -552,11 +561,12 @@ namespace QFramework
     public static class CanRegisterEventExtension
     {
         /// <summary>注册架构作用域内的事件监听；priority 默认 0，数值越大越先触发，相同优先级下先注册的先触发。</summary>
-        public static IUnRegister RegisterEvent<T>(this ICanRegisterEvent self, Action<T> onEvent, int priority = 0) =>
+        public static IUnRegister RegisterEvent<T>(this ICanRegisterEvent self, Action<T> onEvent, int priority = 0)
+            where T : IEvent =>
             self.GetArchitecture().RegisterEvent<T>(onEvent, priority);
 
         /// <summary>移除架构作用域内的事件监听。</summary>
-        public static void UnRegisterEvent<T>(this ICanRegisterEvent self, Action<T> onEvent) =>
+        public static void UnRegisterEvent<T>(this ICanRegisterEvent self, Action<T> onEvent) where T : IEvent =>
             self.GetArchitecture().UnRegisterEvent<T>(onEvent);
     }
 
@@ -590,11 +600,12 @@ namespace QFramework
     public static class CanSendEventExtension
     {
         /// <summary>创建并发送一个无参 Event。</summary>
-        public static void SendEvent<T>(this ICanSendEvent self) where T : new() =>
+        public static void SendEvent<T>(this ICanSendEvent self) where T : IEvent, new() =>
             self.GetArchitecture().SendEvent<T>();
 
         /// <summary>发送一个已经创建好的 Event。</summary>
-        public static void SendEvent<T>(this ICanSendEvent self, T e) => self.GetArchitecture().SendEvent<T>(e);
+        public static void SendEvent<T>(this ICanSendEvent self, T e) where T : IEvent =>
+            self.GetArchitecture().SendEvent<T>(e);
     }
 
     /// <summary>声明对象可以发送 Query。</summary>
@@ -830,17 +841,17 @@ namespace QFramework
         public static readonly TypeEventSystem Global = new TypeEventSystem();
 
         /// <summary>创建并发送一个无参事件；没有监听器时不会创建事件容器。</summary>
-        public void Send<T>() where T : new() => mEvents.GetEvent<EasyEvent<T>>()?.Trigger(new T());
+        public void Send<T>() where T : IEvent, new() => mEvents.GetEvent<EasyEvent<T>>()?.Trigger(new T());
 
         /// <summary>发送一个事件实例。</summary>
-        public void Send<T>(T e) => mEvents.GetEvent<EasyEvent<T>>()?.Trigger(e);
+        public void Send<T>(T e) where T : IEvent => mEvents.GetEvent<EasyEvent<T>>()?.Trigger(e);
 
         /// <summary>注册事件监听器，并返回取消注册句柄；priority 默认 0，数值越大越先触发，相同优先级下先注册的先触发。</summary>
-        public IUnRegister Register<T>(Action<T> onEvent, int priority = 0) =>
+        public IUnRegister Register<T>(Action<T> onEvent, int priority = 0) where T : IEvent =>
             mEvents.GetOrAddEvent<EasyEvent<T>>().Register(onEvent, priority);
 
         /// <summary>移除指定事件类型的监听器。</summary>
-        public void UnRegister<T>(Action<T> onEvent)
+        public void UnRegister<T>(Action<T> onEvent) where T : IEvent
         {
             var e = mEvents.GetEvent<EasyEvent<T>>();
             e?.UnRegister(onEvent);
