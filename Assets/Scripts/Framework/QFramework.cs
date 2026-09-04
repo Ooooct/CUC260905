@@ -76,8 +76,8 @@ namespace QFramework
         /// <summary>发送一个已经创建好的 Event 实例。</summary>
         void SendEvent<T>(T e);
 
-        /// <summary>注册一个类型事件监听器，并返回用于取消注册的句柄。</summary>
-        IUnRegister RegisterEvent<T>(Action<T> onEvent);
+        /// <summary>注册一个类型事件监听器；priority 默认 0，数值越大越先触发，相同优先级下先注册的先触发。</summary>
+        IUnRegister RegisterEvent<T>(Action<T> onEvent, int priority = 0);
 
         /// <summary>移除一个类型事件监听器。</summary>
         void UnRegisterEvent<T>(Action<T> onEvent);
@@ -269,8 +269,9 @@ namespace QFramework
         /// <summary>发送指定实例的类型事件。</summary>
         public void SendEvent<TEvent>(TEvent e) => mTypeEventSystem.Send<TEvent>(e);
 
-        /// <summary>注册架构作用域内的类型事件。</summary>
-        public IUnRegister RegisterEvent<TEvent>(Action<TEvent> onEvent) => mTypeEventSystem.Register<TEvent>(onEvent);
+        /// <summary>注册架构作用域内的类型事件；priority 默认 0，数值越大越先触发，相同优先级下先注册的先触发。</summary>
+        public IUnRegister RegisterEvent<TEvent>(Action<TEvent> onEvent, int priority = 0) =>
+            mTypeEventSystem.Register<TEvent>(onEvent, priority);
 
         /// <summary>移除架构作用域内的类型事件监听。</summary>
         public void UnRegisterEvent<TEvent>(Action<TEvent> onEvent) => mTypeEventSystem.UnRegister<TEvent>(onEvent);
@@ -286,9 +287,9 @@ namespace QFramework
     /// <summary>把 IOnEvent&lt;T&gt; 适配到全局 TypeEventSystem 的扩展方法。</summary>
     public static class OnGlobalEventExtension
     {
-        /// <summary>注册当前对象的全局事件处理方法。</summary>
-        public static IUnRegister RegisterEvent<T>(this IOnEvent<T> self) where T : struct =>
-            TypeEventSystem.Global.Register<T>(self.OnEvent);
+        /// <summary>注册当前对象的全局事件处理方法；priority 默认 0，数值越大越先触发，相同优先级下先注册的先触发。</summary>
+        public static IUnRegister RegisterEvent<T>(this IOnEvent<T> self, int priority = 0) where T : struct =>
+            TypeEventSystem.Global.Register<T>(self.OnEvent, priority);
 
         /// <summary>移除当前对象的全局事件处理方法。</summary>
         public static void UnRegisterEvent<T>(this IOnEvent<T> self) where T : struct =>
@@ -550,9 +551,9 @@ namespace QFramework
     /// <summary>把 ICanRegisterEvent 的能力转发为便捷的扩展方法。</summary>
     public static class CanRegisterEventExtension
     {
-        /// <summary>注册架构作用域内的事件监听。</summary>
-        public static IUnRegister RegisterEvent<T>(this ICanRegisterEvent self, Action<T> onEvent) =>
-            self.GetArchitecture().RegisterEvent<T>(onEvent);
+        /// <summary>注册架构作用域内的事件监听；priority 默认 0，数值越大越先触发，相同优先级下先注册的先触发。</summary>
+        public static IUnRegister RegisterEvent<T>(this ICanRegisterEvent self, Action<T> onEvent, int priority = 0) =>
+            self.GetArchitecture().RegisterEvent<T>(onEvent, priority);
 
         /// <summary>移除架构作用域内的事件监听。</summary>
         public static void UnRegisterEvent<T>(this ICanRegisterEvent self, Action<T> onEvent) =>
@@ -834,8 +835,9 @@ namespace QFramework
         /// <summary>发送一个事件实例。</summary>
         public void Send<T>(T e) => mEvents.GetEvent<EasyEvent<T>>()?.Trigger(e);
 
-        /// <summary>注册事件监听器，并返回取消注册句柄。</summary>
-        public IUnRegister Register<T>(Action<T> onEvent) => mEvents.GetOrAddEvent<EasyEvent<T>>().Register(onEvent);
+        /// <summary>注册事件监听器，并返回取消注册句柄；priority 默认 0，数值越大越先触发，相同优先级下先注册的先触发。</summary>
+        public IUnRegister Register<T>(Action<T> onEvent, int priority = 0) =>
+            mEvents.GetOrAddEvent<EasyEvent<T>>().Register(onEvent, priority);
 
         /// <summary>移除指定事件类型的监听器。</summary>
         public void UnRegister<T>(Action<T> onEvent)
@@ -1060,47 +1062,116 @@ namespace QFramework
     /// <summary>无参数简单事件。</summary>
     public class EasyEvent : IEasyEvent
     {
-        private Action mOnEvent = () => { };
+        private readonly List<EventEntry> mOnEvents = new List<EventEntry>();
 
-        /// <summary>注册监听器并返回取消注册句柄。</summary>
-        public IUnRegister Register(Action onEvent)
+        /// <summary>注册监听器并返回取消注册句柄；priority 默认 0，数值越大越先触发，相同优先级下先注册的先触发。</summary>
+        public IUnRegister Register(Action onEvent, int priority = 0)
         {
-            mOnEvent += onEvent;
+            mOnEvents.Insert(FindInsertIndex(priority), new EventEntry(onEvent, priority));
             return new CustomUnRegister(() => { UnRegister(onEvent); });
         }
 
-        /// <summary>立即调用一次监听器，然后注册它以接收后续事件。</summary>
-        public IUnRegister RegisterWithACall(Action onEvent)
+        /// <summary>立即调用一次监听器，然后注册它以接收后续事件；priority 默认 0。</summary>
+        public IUnRegister RegisterWithACall(Action onEvent, int priority = 0)
         {
             onEvent.Invoke();
-            return Register(onEvent);
+            return Register(onEvent, priority);
         }
 
-        /// <summary>移除监听器。</summary>
-        public void UnRegister(Action onEvent) => mOnEvent -= onEvent;
+        IUnRegister IEasyEvent.Register(Action onEvent) => Register(onEvent);
 
-        /// <summary>触发事件，按注册顺序调用监听器。</summary>
-        public void Trigger() => mOnEvent?.Invoke();
+        /// <summary>移除监听器。</summary>
+        public void UnRegister(Action onEvent)
+        {
+            for (var i = 0; i < mOnEvents.Count; i++)
+            {
+                if (mOnEvents[i].Action == onEvent)
+                {
+                    mOnEvents.RemoveAt(i);
+                    return;
+                }
+            }
+        }
+
+        /// <summary>触发事件，按优先级从高到低、同优先级按注册顺序调用监听器。</summary>
+        public void Trigger()
+        {
+            var handlers = mOnEvents.ToArray();
+            for (var i = 0; i < handlers.Length; i++)
+            {
+                handlers[i].Action?.Invoke();
+            }
+        }
+
+        private int FindInsertIndex(int priority)
+        {
+            var index = 0;
+            while (index < mOnEvents.Count && mOnEvents[index].Priority >= priority)
+            {
+                index++;
+            }
+
+            return index;
+        }
+
+        private sealed class EventEntry
+        {
+            public Action Action;
+            public int Priority;
+
+            public EventEntry(Action action, int priority)
+            {
+                Action = action;
+                Priority = priority;
+            }
+        }
     }
 
     /// <summary>携带一个参数的简单事件。</summary>
     public class EasyEvent<T> : IEasyEvent
     {
-        private Action<T> mOnEvent = e => { };
+        private readonly List<EventEntry> mOnEvents = new List<EventEntry>();
 
-        /// <summary>注册监听器并返回取消注册句柄。</summary>
-        public IUnRegister Register(Action<T> onEvent)
+        /// <summary>注册监听器并返回取消注册句柄；priority 默认 0，数值越大越先触发，相同优先级下先注册的先触发。</summary>
+        public IUnRegister Register(Action<T> onEvent, int priority = 0)
         {
-            mOnEvent += onEvent;
+            mOnEvents.Insert(FindInsertIndex(priority), new EventEntry(onEvent, priority));
             return new CustomUnRegister(() => { UnRegister(onEvent); });
         }
 
         /// <summary>移除监听器。</summary>
-        public void UnRegister(Action<T> onEvent) => mOnEvent -= onEvent;
+        public void UnRegister(Action<T> onEvent)
+        {
+            for (var i = 0; i < mOnEvents.Count; i++)
+            {
+                if (mOnEvents[i].Action == onEvent)
+                {
+                    mOnEvents.RemoveAt(i);
+                    return;
+                }
+            }
+        }
 
+        /// <summary>携带参数触发事件，按优先级从高到低、同优先级按注册顺序调用监听器。</summary>
+        public void Trigger(T t)
+        {
+            var handlers = mOnEvents.ToArray();
+            for (var i = 0; i < handlers.Length; i++)
+            {
+                handlers[i].Action?.Invoke(t);
+            }
+        }
 
-        /// <summary>携带参数触发事件。</summary>
-        public void Trigger(T t) => mOnEvent?.Invoke(t);
+        private int FindInsertIndex(int priority)
+        {
+            var index = 0;
+            while (index < mOnEvents.Count && mOnEvents[index].Priority >= priority)
+            {
+                index++;
+            }
+
+            return index;
+        }
 
         // 显式实现 IEasyEvent，使 BindableProperty 等只关心“发生变化”，而不必处理参数。
         IUnRegister IEasyEvent.Register(Action onEvent)
@@ -1108,25 +1179,65 @@ namespace QFramework
             return Register(Action);
             void Action(T _) => onEvent();
         }
+
+        private sealed class EventEntry
+        {
+            public Action<T> Action;
+            public int Priority;
+
+            public EventEntry(Action<T> action, int priority)
+            {
+                Action = action;
+                Priority = priority;
+            }
+        }
     }
 
     /// <summary>携带两个参数的简单事件。</summary>
     public class EasyEvent<T, K> : IEasyEvent
     {
-        private Action<T, K> mOnEvent = (t, k) => { };
+        private readonly List<EventEntry> mOnEvents = new List<EventEntry>();
 
-        /// <summary>注册监听器并返回取消注册句柄。</summary>
-        public IUnRegister Register(Action<T, K> onEvent)
+        /// <summary>注册监听器并返回取消注册句柄；priority 默认 0，数值越大越先触发，相同优先级下先注册的先触发。</summary>
+        public IUnRegister Register(Action<T, K> onEvent, int priority = 0)
         {
-            mOnEvent += onEvent;
+            mOnEvents.Insert(FindInsertIndex(priority), new EventEntry(onEvent, priority));
             return new CustomUnRegister(() => { UnRegister(onEvent); });
         }
 
         /// <summary>移除监听器。</summary>
-        public void UnRegister(Action<T, K> onEvent) => mOnEvent -= onEvent;
+        public void UnRegister(Action<T, K> onEvent)
+        {
+            for (var i = 0; i < mOnEvents.Count; i++)
+            {
+                if (mOnEvents[i].Action == onEvent)
+                {
+                    mOnEvents.RemoveAt(i);
+                    return;
+                }
+            }
+        }
 
-        /// <summary>携带两个参数触发事件。</summary>
-        public void Trigger(T t, K k) => mOnEvent?.Invoke(t, k);
+        /// <summary>携带两个参数触发事件，按优先级从高到低、同优先级按注册顺序调用监听器。</summary>
+        public void Trigger(T t, K k)
+        {
+            var handlers = mOnEvents.ToArray();
+            for (var i = 0; i < handlers.Length; i++)
+            {
+                handlers[i].Action?.Invoke(t, k);
+            }
+        }
+
+        private int FindInsertIndex(int priority)
+        {
+            var index = 0;
+            while (index < mOnEvents.Count && mOnEvents[index].Priority >= priority)
+            {
+                index++;
+            }
+
+            return index;
+        }
 
         /// <summary>把带参数事件适配为无参数事件监听。</summary>
         IUnRegister IEasyEvent.Register(Action onEvent)
@@ -1134,31 +1245,83 @@ namespace QFramework
             return Register(Action);
             void Action(T _, K __) => onEvent();
         }
+
+        private sealed class EventEntry
+        {
+            public Action<T, K> Action;
+            public int Priority;
+
+            public EventEntry(Action<T, K> action, int priority)
+            {
+                Action = action;
+                Priority = priority;
+            }
+        }
     }
 
     /// <summary>携带三个参数的简单事件。</summary>
     public class EasyEvent<T, K, S> : IEasyEvent
     {
-        private Action<T, K, S> mOnEvent = (t, k, s) => { };
+        private readonly List<EventEntry> mOnEvents = new List<EventEntry>();
 
-        /// <summary>注册监听器并返回取消注册句柄。</summary>
-        public IUnRegister Register(Action<T, K, S> onEvent)
+        /// <summary>注册监听器并返回取消注册句柄；priority 默认 0，数值越大越先触发，相同优先级下先注册的先触发。</summary>
+        public IUnRegister Register(Action<T, K, S> onEvent, int priority = 0)
         {
-            mOnEvent += onEvent;
+            mOnEvents.Insert(FindInsertIndex(priority), new EventEntry(onEvent, priority));
             return new CustomUnRegister(() => { UnRegister(onEvent); });
         }
 
         /// <summary>移除监听器。</summary>
-        public void UnRegister(Action<T, K, S> onEvent) => mOnEvent -= onEvent;
+        public void UnRegister(Action<T, K, S> onEvent)
+        {
+            for (var i = 0; i < mOnEvents.Count; i++)
+            {
+                if (mOnEvents[i].Action == onEvent)
+                {
+                    mOnEvents.RemoveAt(i);
+                    return;
+                }
+            }
+        }
 
-        /// <summary>携带三个参数触发事件。</summary>
-        public void Trigger(T t, K k, S s) => mOnEvent?.Invoke(t, k, s);
+        /// <summary>携带三个参数触发事件，按优先级从高到低、同优先级按注册顺序调用监听器。</summary>
+        public void Trigger(T t, K k, S s)
+        {
+            var handlers = mOnEvents.ToArray();
+            for (var i = 0; i < handlers.Length; i++)
+            {
+                handlers[i].Action?.Invoke(t, k, s);
+            }
+        }
+
+        private int FindInsertIndex(int priority)
+        {
+            var index = 0;
+            while (index < mOnEvents.Count && mOnEvents[index].Priority >= priority)
+            {
+                index++;
+            }
+
+            return index;
+        }
 
         /// <summary>把带参数事件适配为无参数事件监听。</summary>
         IUnRegister IEasyEvent.Register(Action onEvent)
         {
             return Register(Action);
             void Action(T _, K __, S ___) => onEvent();
+        }
+
+        private sealed class EventEntry
+        {
+            public Action<T, K, S> Action;
+            public int Priority;
+
+            public EventEntry(Action<T, K, S> action, int priority)
+            {
+                Action = action;
+                Priority = priority;
+            }
         }
     }
 
