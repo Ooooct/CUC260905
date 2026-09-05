@@ -2,6 +2,11 @@ using UnityEngine;
 
 namespace CUC260905.Interaction
 {
+    /// <summary>标记允许在模拟暂停时继续执行的拖拽能力。</summary>
+    public interface IPauseAllowedDrag
+    {
+    }
+
     /// <summary>对象响应点击意图的能力。</summary>
     public interface IClickable
     {
@@ -29,7 +34,8 @@ namespace CUC260905.Interaction
     public sealed class CapabilitySinkAdapter : MonoBehaviour,
         IIntentSink<ClickIntent>,
         IIntentSink<DragIntent>,
-        IIntentSink<HoverIntent>
+        IIntentSink<HoverIntent>,
+        IPauseAllowedIntentSink
     {
         private IClickable mClickable;
         private IDraggable mDraggable;
@@ -104,6 +110,11 @@ namespace CUC260905.Interaction
             }
 
             return mHoverable.OnHover(intent);
+        }
+
+        public bool CanHandleWhilePaused(System.Type intentType)
+        {
+            return intentType == typeof(DragIntent) && mDraggable is IPauseAllowedDrag;
         }
 
         private void RegisterClickable(IClickable clickable)

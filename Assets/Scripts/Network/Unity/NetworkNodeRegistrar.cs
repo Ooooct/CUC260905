@@ -43,14 +43,15 @@ namespace CUC260905.Network
         }
 
         // Start 晚于 InputController.Awake，确保 GameArchitecture 已装配。
+        // 以 Start 时刻作为部署时刻：用户节点的部署接入时间从此刻起算。
         private void Start()
         {
             mSystem = this.GetSystem<INetworkTopologySystem>();
             ResolveRuntimeIdentity();
             NodeDescriptor node = new NodeDescriptor(mNodeId, mRole, mDisplayName);
             NetworkTopologyResult result = mRole == NetworkNodeRole.Server
-                ? mSystem.Register(node, BuildInitialCapabilities())
-                : mSystem.Register(node);
+                ? mSystem.Register(node, BuildInitialCapabilities(), deployedAt: Time.timeAsDouble)
+                : mSystem.Register(node, deployedAt: Time.timeAsDouble);
             mRegistered = result == NetworkTopologyResult.Success;
 
             if (!mRegistered)
@@ -71,7 +72,7 @@ namespace CUC260905.Network
                 INodeIdentitySource identitySource = this.GetUtility<INodeIdentitySource>();
                 mNodeId = identitySource != null
                     ? identitySource.NextNodeId(mRole)
-                    : GuidNodeIdentitySource.Create(mRole);
+                    : SequentialNodeIdentitySource.Create(mRole);
             }
 
             if (string.IsNullOrWhiteSpace(mDisplayName))

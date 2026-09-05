@@ -1,5 +1,4 @@
 using CUC260905.Interaction;
-using CUC260905.Placement;
 using QFramework;
 using UnityEngine;
 
@@ -9,16 +8,14 @@ namespace CUC260905.Game
     /// 空格切换暂停的控制器。
     /// 暂停语义（按需求确认）：模拟时间冻结（Time.timeScale = 0，冻结所有缩放时间驱动的
     /// 数据包/生成/负载/淡出动画），相机浏览保留（相机使用非缩放时间），
-    /// 世界交互被抑制（由 InteractionInputSystem / PlacementSystem / NetworkConnectionController
-    /// 读取 IGamePauseState 自行门控）。
-    /// 进入暂停时收束进行中的交互会话与放置模式，避免跨暂停残留拖拽/幽灵状态。
+    /// 相机浏览、服务器部署和节点连线可继续操作；其他世界交互由输入路由按能力抑制。
+    /// 进入暂停时收束已有指针手势，但保留尚未完成的服务器部署模式。
     /// </summary>
     [DisallowMultipleComponent]
     public sealed class GamePauseController : MonoBehaviour, IController, ICanSendEvent
     {
         private IGamePauseState mPauseState;
         private IInteractionInputSystem mInputSystem;
-        private IPlacementSystem mPlacementSystem;
         private float mTimeScaleBeforePause = 1.0f;
         private bool mInitialized;
 
@@ -38,11 +35,27 @@ namespace CUC260905.Game
                 }
             }
 
-            // 旧 Input Manager 的按键读取不受 timeScale 影响，暂停期间仍能响应空格。
+            // 旧 Input Manager 的按键读取不受 timeScale 影响，暂停期间仍能响应全局快捷键。
+            if (Input.GetKeyDown(KeyCode.Escape))
+            {
+                QuitGame();
+                return;
+            }
+
             if (Input.GetKeyDown(KeyCode.Space))
             {
                 TogglePause();
             }
+        }
+
+        /// <summary>退出独立运行程序；编辑器内结束 Play Mode，便于直接验证 Esc 行为。</summary>
+        private static void QuitGame()
+        {
+            Application.Quit();
+
+#if UNITY_EDITOR
+            UnityEditor.EditorApplication.isPlaying = false;
+#endif
         }
 
         /// <summary>按当前状态切换暂停/恢复；可由 UI 按钮等外部入口复用。</summary>
@@ -77,11 +90,8 @@ namespace CUC260905.Game
 
             mPauseState.IsPaused.Value = true;
 
-            // 收束进行中的指针会话（拖拽/悬浮），防止暂停期间漏掉的 Up 让会话残留到恢复后。
+            // 清理暂停瞬间已经开始的手势，避免它们跨状态继续；暂停后新建的连线仍可正常处理。
             mInputSystem?.CancelAll();
-
-            // 收束放置模式：放置是独占输入，若带着放置模式暂停会继续阻塞相机浏览。
-            mPlacementSystem?.Cancel();
 
             mTimeScaleBeforePause = Time.timeScale;
             Time.timeScale = 0.0f;
@@ -121,7 +131,6 @@ namespace CUC260905.Game
             // Start 晚于 InputController.Awake，GameArchitecture 已完成装配。
             mPauseState = this.GetModel<IGamePauseState>();
             mInputSystem = this.GetSystem<IInteractionInputSystem>();
-            mPlacementSystem = this.GetSystem<IPlacementSystem>();
             if (mPauseState == null)
             {
                 Debug.LogError("GamePauseController 未找到 IGamePauseState，请确认场景存在 InputController。", this);

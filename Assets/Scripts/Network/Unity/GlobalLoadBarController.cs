@@ -12,15 +12,15 @@ namespace CUC260905.Network
     /// </summary>
     [ExecuteAlways]
     [DisallowMultipleComponent]
-    public sealed class GlobalLoadBarController : MonoBehaviour, IController
+    public sealed class GlobalLoadBarController : MonoBehaviour, IController, ICanSendEvent
     {
         [Header("总体负载规则")]
         [SerializeField, Range(0.0f, 1.0f)]
         [Tooltip("每个数据包无法到达目的地时增加的总体负载比例。")]
-        private float mUnreachablePenalty = 0.2f;
+        private float mUnreachablePenalty = 0.05f;
         [SerializeField, Min(0.0f)]
-        [Tooltip("总体负载每秒自动降低的比例，例如 0.05 代表每秒降低 5%。")]
-        private float mDecreasePerSecond = 0.05f;
+        [Tooltip("总体负载每秒自动降低的比例，例如 0.02 代表每秒降低 2%。")]
+        private float mDecreasePerSecond = 0.02f;
 
         [Header("HUD 引用（留空时运行时自动创建）")]
         [SerializeField] private Slider mLoadSlider;
@@ -82,7 +82,7 @@ namespace CUC260905.Network
             RefreshView();
             if (reachedGameOver)
             {
-                Debug.LogError("游戏失败：总体负载达到 100%。", this);
+                this.SendEvent(new GameOverEvent());
             }
         }
 

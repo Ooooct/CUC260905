@@ -1,4 +1,5 @@
 using System;
+using CUC260905.Game;
 using QFramework;
 
 namespace CUC260905.Interaction
@@ -26,6 +27,12 @@ namespace CUC260905.Interaction
             where TIntent : struct, IInteractionIntent;
     }
 
+    /// <summary>标记可在模拟暂停时接收指定交互意图的接收器。</summary>
+    public interface IPauseAllowedIntentSink
+    {
+        bool CanHandleWhilePaused(Type intentType);
+    }
+
     /// <summary>
     /// 只完成目标可用性检查与接收器路由，不解释 Click、Drag、Hover 的业务含义。
     /// Resolver 可在下一层替换为组件查找、注册表、配置表或测试替身。
@@ -33,10 +40,12 @@ namespace CUC260905.Interaction
     public sealed class IntentDispatcher : IIntentDispatcher
     {
         private readonly IIntentSinkResolver mSinkResolver;
+        private readonly IGamePauseState mPauseState;
 
-        public IntentDispatcher(IIntentSinkResolver sinkResolver)
+        public IntentDispatcher(IIntentSinkResolver sinkResolver, IGamePauseState pauseState)
         {
             mSinkResolver = sinkResolver ?? throw new ArgumentNullException(nameof(sinkResolver));
+            mPauseState = pauseState;
         }
 
         /// <summary>满足解释层输出端口；结果由调用方选择是否观察。</summary>
@@ -58,6 +67,13 @@ namespace CUC260905.Interaction
             if (!mSinkResolver.TryResolve(target, out IIntentSink<TIntent> sink) || sink == null)
             {
                 return new InteractionResult(InteractionResultStatus.SinkUnavailable);
+            }
+
+            if (mPauseState != null && mPauseState.IsPaused.Value &&
+                (!(sink is IPauseAllowedIntentSink pauseAllowedSink) ||
+                 !pauseAllowedSink.CanHandleWhilePaused(typeof(TIntent))))
+            {
+                return new InteractionResult(InteractionResultStatus.Rejected);
             }
 
             return sink.Handle(target, intent);

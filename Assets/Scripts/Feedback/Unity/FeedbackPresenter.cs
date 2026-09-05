@@ -66,7 +66,7 @@ namespace CUC260905.Feedback
 
         private void TryShowOffscreenIndicator(in CircleFeedbackRequest request)
         {
-            if (!mShowOffscreenIndicator || request.Duration <= 0f)
+            if (!mShowOffscreenIndicator || !request.ShowOffscreenIndicator || request.Duration <= 0f)
             {
                 return;
             }

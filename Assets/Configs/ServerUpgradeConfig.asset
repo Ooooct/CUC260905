@@ -40,29 +40,15 @@ MonoBehaviour:
   - AppliedValue: 1540
     MoneyCost: 5000
   mMaxConnectionLevels:
-  - AppliedValue: 5
+  - AppliedValue: 4
     MoneyCost: 0
-  - AppliedValue: 10
-    MoneyCost: 30
-  - AppliedValue: 15
+  - AppliedValue: 5
     MoneyCost: 50
-  - AppliedValue: 20
-    MoneyCost: 100
-  - AppliedValue: 25
-    MoneyCost: 150
-  - AppliedValue: 30
-    MoneyCost: 250
-  - AppliedValue: 35
-    MoneyCost: 350
-  - AppliedValue: 40
-    MoneyCost: 450
-  - AppliedValue: 45
-    MoneyCost: 650
-  - AppliedValue: 50
-    MoneyCost: 900
-  - AppliedValue: 55
-    MoneyCost: 1300
-  - AppliedValue: 60
-    MoneyCost: 1800
-  - AppliedValue: 65
-    MoneyCost: 2500
+  - AppliedValue: 6
+    MoneyCost: 200
+  - AppliedValue: 7
+    MoneyCost: 400
+  - AppliedValue: 8
+    MoneyCost: 600
+  - AppliedValue: 9
+    MoneyCost: 1000

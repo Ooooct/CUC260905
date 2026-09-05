@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using CUC260905.Message;
 using NUnit.Framework;
 using QFramework;
+using UnityEngine;
 
 namespace CUC260905.Network.Tests
 {
@@ -99,6 +100,7 @@ namespace CUC260905.Network.Tests
             Assert.That(mMessageSystem.GetHistory("MainTerminal"), Has.Count.EqualTo(1));
             Assert.That(unreachable, Has.Count.EqualTo(1));
             Assert.That(unreachable[0].Result, Is.EqualTo(PacketTransmissionResult.Unreachable));
+            Assert.That(unreachable[0].ProblemNodeIds, Is.EqualTo(new[] { "server-a" }));
             registration.UnRegister();
         }
 
@@ -202,6 +204,58 @@ namespace CUC260905.Network.Tests
             }
         }
 
+        [Test]
+        public void SendRandomPacket_PrefersCloserUserTarget()
+        {
+            // 距离加权目标选取（含 0.05 权重下限）：user-b 距源 0.5（有效权重≈0.487），
+            // user-c 距源 10（密度≈0.005，经下限后有效≈0.05），理论占比约 91% : 9%，
+            // 最近者应显著更常被选中，同时远端仍保有真实选中机会。
+            RegisterUser("user-a");
+            RegisterUser("user-b");
+            RegisterUser("user-c");
+            RegisterServer("server-a", 5000f);
+            Connect("user-a", "server-a");
+            Connect("server-a", "user-b");
+            Connect("server-a", "user-c");
+
+            FakePositionProvider positions = new FakePositionProvider();
+            positions.Positions["user-a"] = new Vector3(0f, 0f, 0f);
+            positions.Positions["user-b"] = new Vector3(0.5f, 0f, 0f);
+            positions.Positions["user-c"] = new Vector3(10f, 0f, 0f);
+            TrafficTestArchitecture.Interface.RegisterUtility<INodePositionProvider>(positions);
+
+            List<PacketTransmittedEvent> sent = new List<PacketTransmittedEvent>();
+            IUnRegister registration =
+                TrafficTestArchitecture.Interface.RegisterEvent<PacketTransmittedEvent>(sent.Add);
+
+            for (int seed = 0; seed < 1000; seed++)
+            {
+                PacketTransmissionResult result = mTrafficSystem.SendRandomPacket(
+                    "user-a", 4f, 1f, "MainTerminal", 1d, new System.Random(seed));
+                Assert.That(result, Is.EqualTo(PacketTransmissionResult.Success));
+            }
+
+            registration.UnRegister();
+
+            int countNear = 0;
+            int countFar = 0;
+            foreach (PacketTransmittedEvent packet in sent)
+            {
+                if (string.Equals(packet.DestinationNodeId, "user-b", System.StringComparison.Ordinal))
+                {
+                    countNear = countNear + 1;
+                }
+                else if (string.Equals(packet.DestinationNodeId, "user-c", System.StringComparison.Ordinal))
+                {
+                    countFar = countFar + 1;
+                }
+            }
+
+            Assert.That(sent, Has.Count.EqualTo(1000));
+            Assert.That(countNear, Is.GreaterThan(countFar));
+            Assert.That(countFar, Is.GreaterThan(0));
+        }
+
         private void RegisterUser(string nodeId)
         {
             Assert.That(
@@ -229,6 +283,17 @@ namespace CUC260905.Network.Tests
         {
             Assert.That(mModel.TryGetServerCapabilities(nodeId, out ServerNodeCapabilities capabilities), Is.True);
             return capabilities.CurrentDataLoadPerSecond.Value;
+        }
+
+        private sealed class FakePositionProvider : INodePositionProvider
+        {
+            public readonly Dictionary<string, Vector3> Positions =
+                new Dictionary<string, Vector3>(System.StringComparer.Ordinal);
+
+            public bool TryGetNodePosition(string nodeId, out Vector3 position)
+            {
+                return Positions.TryGetValue(nodeId, out position);
+            }
         }
 
         private sealed class TrafficTestArchitecture : Architecture<TrafficTestArchitecture>

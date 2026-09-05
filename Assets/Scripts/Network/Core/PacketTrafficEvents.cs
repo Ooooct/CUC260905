@@ -14,7 +14,9 @@ namespace CUC260905.Network
         DestinationNotUserNode = 4,
         InvalidPacketSize = 5,
         Unreachable = 6,
-        SelfSendForbidden = 7
+        SelfSendForbidden = 7,
+        SourceNotAccessible = 8,
+        DestinationNotAccessible = 9
     }
 
     /// <summary>一次成功发送的数据包快照；路径包含起点用户节点和终点用户节点，中间经服务器中继。</summary>
@@ -40,24 +42,37 @@ namespace CUC260905.Network
         }
     }
 
-    /// <summary>一次没有可行路由的数据包快照，供之后追加专门的提示或特效表现。</summary>
+    /// <summary>
+    /// 一次没有可行路由的数据包快照。除起点外，还会携带在寻路期间因吞吐上限被拒绝的服务器，
+    /// 供表现层标记实际阻塞传输的问题节点。
+    /// </summary>
     public readonly struct PacketUnreachableEvent : IEvent
     {
         public readonly string SourceNodeId;
         public readonly string DestinationNodeId;
         public readonly float PacketSize;
         public readonly PacketTransmissionResult Result;
+        public readonly IReadOnlyList<string> ProblemNodeIds;
 
         public PacketUnreachableEvent(
             string sourceNodeId,
             string destinationNodeId,
             float packetSize,
-            PacketTransmissionResult result)
+            PacketTransmissionResult result,
+            IReadOnlyList<string> problemNodeIds = null)
         {
             SourceNodeId = sourceNodeId;
             DestinationNodeId = destinationNodeId;
             PacketSize = packetSize;
             Result = result;
+            ProblemNodeIds = problemNodeIds == null
+                ? Array.Empty<string>()
+                : new List<string>(problemNodeIds).AsReadOnly();
         }
+    }
+
+    /// <summary>总体负载首次达到失败阈值时发送；同一局内只会发送一次。</summary>
+    public readonly struct GameOverEvent : IEvent
+    {
     }
 }

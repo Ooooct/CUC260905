@@ -8,7 +8,11 @@ namespace CUC260905.Network
     /// <summary>节点资料和连通关系的唯一写入口。</summary>
     public interface INetworkTopologySystem : ISystem
     {
-        NetworkTopologyResult Register(NodeDescriptor node, ServerNodeCapabilities capabilities = null);
+        /// <summary>
+        /// 注册节点。deployedAt 为部署（注册）时刻，用于计算用户节点的部署接入剩余时间；
+        /// 0 表示未指定（按无接入门控处理，兼容既有调用方与测试）。
+        /// </summary>
+        NetworkTopologyResult Register(NodeDescriptor node, ServerNodeCapabilities capabilities = null, double deployedAt = 0d);
 
         NetworkTopologyResult Unregister(string nodeId);
 
@@ -46,7 +50,7 @@ namespace CUC260905.Network
             mModel = model;
         }
 
-        public NetworkTopologyResult Register(NodeDescriptor node, ServerNodeCapabilities capabilities = null)
+        public NetworkTopologyResult Register(NodeDescriptor node, ServerNodeCapabilities capabilities = null, double deployedAt = 0d)
         {
             if (!node.HasValidNodeId)
             {
@@ -69,7 +73,7 @@ namespace CUC260905.Network
                     : NetworkTopologyResult.DuplicateNodeId;
             }
 
-            mModel.Register(node, capabilities);
+            mModel.Register(node, capabilities, deployedAt);
             this.SendEvent(new NodeRegisteredEvent(node));
             return NetworkTopologyResult.Success;
         }

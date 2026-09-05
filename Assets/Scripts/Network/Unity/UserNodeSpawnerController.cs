@@ -9,7 +9,7 @@ namespace CUC260905.Network
 {
     /// <summary>
     /// 用户节点自动生成控制器（表现层）。
-    /// 候选点不再预先批量生成：每次生成节拍到来时，由 UserNodeScatterGenerator
+    /// 启用自动生成时，先等待首个服务器登记并立即生成第一个用户节点；之后每次生成节拍到来时，由 UserNodeScatterGenerator
     /// 在当前"已外扩半径"内逐一采样一个候选点（Best-Candidate，保持平均且随机），
     /// 采样范围随已生成数量从内半径逐步外扩到 RangeRadius；
     /// 过近（MinDistance）分析同时避开已生成用户点与场景内服务器节点
@@ -46,12 +46,14 @@ namespace CUC260905.Network
         private float mSpawnIntervalMax = 0.8f;
         [SerializeField, Tooltip("实例落点所在固定世界 z 平面。")]
         private float mSpawnZ = 0.0f;
-        [SerializeField, Tooltip("进入运行时是否自动开始生成。")]
+        [SerializeField, Tooltip("进入运行时是否自动生成；首个用户节点会在首个服务器登记后立即生成。")]
         private bool mAutoStart = true;
 
         private UserNodeScatterGenerator mGenerator;
         private UserNodeSpawnScheduler mScheduler;
         private IPlacementInstantiator mInstantiator;
+        private IUnRegister mNodeRegisteredRegistration;
+        private bool mSpawnStarted;
 
         /// <summary>已生成（消耗）的用户节点位置，按生成顺序排列，供状态显示或测试读取。</summary>
         public IReadOnlyList<Vector2> GeneratedPoints
@@ -91,10 +93,21 @@ namespace CUC260905.Network
             }
 
             Regenerate();
-            if (mAutoStart && mScheduler != null)
+            if (!mAutoStart || mScheduler == null)
             {
-                mScheduler.Reset(Time.timeAsDouble);
+                return;
             }
+
+            mNodeRegisteredRegistration = this.RegisterEvent<NodeRegisteredEvent>(OnNodeRegistered);
+            if (HasRegisteredServer())
+            {
+                StartAfterFirstServerRegistered();
+            }
+        }
+
+        private void OnDestroy()
+        {
+            mNodeRegisteredRegistration?.UnRegister();
         }
 
         /// <summary>重建生成器与节奏器；种子固定时结果确定。</summary>
@@ -106,11 +119,13 @@ namespace CUC260905.Network
             mGenerator = new UserNodeScatterGenerator(config, random);
             mGenerator.Reset();
             mScheduler = new UserNodeSpawnScheduler(mSpawnIntervalMin, mSpawnIntervalMax, random);
+            mSpawnStarted = false;
         }
 
         private void Update()
         {
-            if (mGenerator == null || mScheduler == null || mInstantiator == null || mUserNodePrefab == null)
+            if (!mSpawnStarted || mGenerator == null || mScheduler == null ||
+                mInstantiator == null || mUserNodePrefab == null)
             {
                 return;
             }
@@ -120,18 +135,76 @@ namespace CUC260905.Network
             while (mGenerator.CanGenerateMore &&
                    mScheduler.TryConsume(now, mGenerator.TargetCount, out _))
             {
-                if (!mGenerator.TryGenerateNextPoint(CollectServerPositions(), out Vector2 position))
+                if (!SpawnNextUserNode())
                 {
                     break;
                 }
+            }
+        }
 
-                Vector3 world = new Vector3(position.x, position.y, mSpawnZ);
-                GameObject instance = mInstantiator.Instantiate(mUserNodePrefab, world, Quaternion.identity);
-                if (instance != null && mParent != null)
+        private void OnNodeRegistered(NodeRegisteredEvent registeredEvent)
+        {
+            if (registeredEvent.Node.Role == NetworkNodeRole.Server)
+            {
+                StartAfterFirstServerRegistered();
+            }
+        }
+
+        /// <summary>首个服务器登记后立即生成一个用户节点，后续节点再进入随机节奏。</summary>
+        private void StartAfterFirstServerRegistered()
+        {
+            if (mSpawnStarted || mGenerator == null || mScheduler == null ||
+                mInstantiator == null || mUserNodePrefab == null)
+            {
+                return;
+            }
+
+            mSpawnStarted = true;
+            if (mScheduler.TryConsumeImmediately(
+                    Time.timeAsDouble,
+                    mGenerator.TargetCount,
+                    out _))
+            {
+                SpawnNextUserNode();
+            }
+        }
+
+        private bool SpawnNextUserNode()
+        {
+            if (!mGenerator.TryGenerateNextPoint(CollectServerPositions(), out Vector2 position))
+            {
+                return false;
+            }
+
+            Vector3 world = new Vector3(position.x, position.y, mSpawnZ);
+            GameObject instance = mInstantiator.Instantiate(mUserNodePrefab, world, Quaternion.identity);
+            if (instance != null && mParent != null)
+            {
+                instance.transform.SetParent(mParent, true);
+            }
+
+            // 生成节拍以候选点产出为准，与既有行为一致：实例化失败不回滚已消耗的位置，
+            // 也不阻断后续节拍。
+            return true;
+        }
+
+        private bool HasRegisteredServer()
+        {
+            INetworkTopologyModel topologyModel = this.GetModel<INetworkTopologyModel>();
+            if (topologyModel == null)
+            {
+                return false;
+            }
+
+            foreach (NodeDescriptor node in topologyModel.Nodes)
+            {
+                if (node.Role == NetworkNodeRole.Server)
                 {
-                    instance.transform.SetParent(mParent, true);
+                    return true;
                 }
             }
+
+            return false;
         }
 
         /// <summary>

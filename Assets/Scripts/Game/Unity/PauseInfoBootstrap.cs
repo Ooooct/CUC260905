@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 namespace CUC260905.Game
 {
@@ -8,9 +9,20 @@ namespace CUC260905.Game
     /// </summary>
     public static class PauseInfoBootstrap
     {
-        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
-        private static void EnsurePauseInfoController()
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
+        private static void InstallSceneLoadHandler()
         {
+            SceneManager.sceneLoaded -= EnsurePauseInfoController;
+            SceneManager.sceneLoaded += EnsurePauseInfoController;
+        }
+
+        private static void EnsurePauseInfoController(Scene scene, LoadSceneMode _)
+        {
+            if (!string.Equals(scene.name, "SampleScene", System.StringComparison.Ordinal))
+            {
+                return;
+            }
+
             GameObject pauseInfo = GameObject.Find("PauseInfo");
             if (pauseInfo == null)
             {

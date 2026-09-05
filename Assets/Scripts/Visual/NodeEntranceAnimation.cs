@@ -43,6 +43,13 @@ namespace CUC260905.Visual
             mTweener = transform.DOScale(mBaseScale, mDuration).SetEase(mEase);
         }
 
+        /// <summary>打断当前入场动画；由更优先的 scale 动画（如悬浮反馈）接管根缩放时调用。</summary>
+        public void KillTween()
+        {
+            mTweener?.Kill();
+            mTweener = null;
+        }
+
         private void OnDestroy()
         {
             mTweener?.Kill();

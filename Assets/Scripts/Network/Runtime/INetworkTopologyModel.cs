@@ -22,14 +22,35 @@ namespace CUC260905.Network
 
         /// <summary>当前全部无向边的只读快照，供交叉检查、路径查找等只读规则使用。</summary>
         IReadOnlyCollection<NetworkEdge> Edges { get; }
+
+        /// <summary>
+        /// 全局统一的部署接入时间（秒）：用户节点注册部署后须等待该时长才能发送与接收数据包。
+        /// 0 表示关闭接入门控。仅用户节点受此限制，服务器节点始终可用。
+        /// </summary>
+        float DeploymentAccessTime { get; }
+
+        /// <summary>
+        /// 用户节点是否已完成部署接入（now >= 部署时刻 + 部署接入时间）。
+        /// 服务器节点恒为 true；未注册节点为 false。
+        /// </summary>
+        bool IsDeploymentAccessComplete(string nodeId, double now);
+
+        /// <summary>
+        /// 查询节点剩余的部署接入时间（秒，不小于 0）；未注册节点返回 false。
+        /// 服务器节点视为无接入门控（返回 true，剩余 0）。
+        /// </summary>
+        bool TryGetDeploymentAccessRemaining(string nodeId, double now, out float remainingSeconds);
     }
 
     /// <summary>
-    /// 保存节点、无向连线、服务器能力档案与边属性；
+    /// 保存节点、无向连线、服务器能力档案、边属性与用户节点部署接入状态；
     /// 不保存 Unity 对象或业务连通规则。
     /// </summary>
     public sealed class NetworkTopologyModel : AbstractModel, INetworkTopologyModel
     {
+        /// <summary>用户节点默认部署接入时间（秒）；0 表示关闭接入门控。生产装配经 GameArchitecture 显式传入。</summary>
+        public const float DefaultDeploymentAccessTime = 10f;
+
         private readonly Dictionary<string, NodeDescriptor> mNodes =
             new Dictionary<string, NodeDescriptor>(StringComparer.Ordinal);
         private readonly Dictionary<string, HashSet<string>> mConnectedNodeIds =
@@ -38,6 +59,51 @@ namespace CUC260905.Network
             new Dictionary<string, ServerNodeCapabilities>(StringComparer.Ordinal);
         private readonly Dictionary<NetworkEdgeKey, NetworkEdge> mEdges =
             new Dictionary<NetworkEdgeKey, NetworkEdge>();
+        private readonly Dictionary<string, double> mDeployedAt =
+            new Dictionary<string, double>(StringComparer.Ordinal);
+
+        /// <summary>以全局统一的部署接入时间构造模型；0 表示无接入门控（既有测试保持立即可用）。</summary>
+        public NetworkTopologyModel(float deploymentAccessTime = 0f)
+        {
+            DeploymentAccessTime = deploymentAccessTime >= 0f ? deploymentAccessTime : 0f;
+        }
+
+        public float DeploymentAccessTime { get; }
+
+        public bool IsDeploymentAccessComplete(string nodeId, double now)
+        {
+            if (!TryGetDeploymentAccessRemaining(nodeId, now, out float remainingSeconds))
+            {
+                return false;
+            }
+
+            return remainingSeconds <= 0f;
+        }
+
+        public bool TryGetDeploymentAccessRemaining(string nodeId, double now, out float remainingSeconds)
+        {
+            remainingSeconds = 0f;
+            if (string.IsNullOrWhiteSpace(nodeId) || !mNodes.TryGetValue(nodeId, out NodeDescriptor node))
+            {
+                return false;
+            }
+
+            // 服务器节点没有部署接入门控，始终可用。
+            if (node.Role != NetworkNodeRole.User)
+            {
+                return true;
+            }
+
+            // 用户节点未记录部署时刻（防御性兜底）：视为已完成接入。
+            if (!mDeployedAt.TryGetValue(nodeId, out double deployedAt))
+            {
+                return true;
+            }
+
+            double remaining = deployedAt + DeploymentAccessTime - now;
+            remainingSeconds = remaining > 0d ? (float)remaining : 0f;
+            return true;
+        }
 
         public bool IsRegistered(string nodeId)
         {
@@ -94,10 +160,15 @@ namespace CUC260905.Network
             get { return new List<NodeDescriptor>(mNodes.Values); }
         }
 
-        internal void Register(NodeDescriptor node, ServerNodeCapabilities capabilities = null)
+        internal void Register(NodeDescriptor node, ServerNodeCapabilities capabilities = null, double deployedAt = 0d)
         {
             mNodes.Add(node.NodeId, node);
             mConnectedNodeIds.Add(node.NodeId, new HashSet<string>(StringComparer.Ordinal));
+            if (node.Role == NetworkNodeRole.User)
+            {
+                mDeployedAt.Add(node.NodeId, deployedAt);
+            }
+
             if (capabilities != null)
             {
                 mServerCapabilities.Add(node.NodeId, capabilities);
@@ -119,6 +190,7 @@ namespace CUC260905.Network
             }
 
             mServerCapabilities.Remove(nodeId);
+            mDeployedAt.Remove(nodeId);
             mConnectedNodeIds.Remove(nodeId);
             mNodes.Remove(nodeId);
         }
@@ -156,6 +228,7 @@ namespace CUC260905.Network
             mConnectedNodeIds.Clear();
             mServerCapabilities.Clear();
             mEdges.Clear();
+            mDeployedAt.Clear();
         }
 
         protected override void OnInit()

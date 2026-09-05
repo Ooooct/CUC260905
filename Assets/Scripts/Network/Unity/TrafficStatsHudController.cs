@@ -13,8 +13,8 @@ namespace CUC260905.Network
     /// 每次数值追加后平滑"跳动"到新目标，而不是生硬跳变。
     /// 性能：单个 Update 驱动，不按数据包开协程；仅在显示值实际变化时重建文本，
     /// 静止时不产生字符串分配，动画期间重建频率也受一位小数粒度限制。
-    /// 编辑模式由 TrafficStatsHudEditorSetup 自动挂载、Play 模式由 TrafficStatsHudBootstrap
-    /// 自动挂载；也可直接在 Canvas 上手动挂载并指定文本引用。
+    /// 手动挂载到屏幕空间 Canvas 即可显示；未指定文本引用时自动创建
+    /// "TrafficStatsValue" 子文本。不再自动装配到其他场景。
     /// </summary>
     [ExecuteAlways]
     [DisallowMultipleComponent]

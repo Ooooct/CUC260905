@@ -10,8 +10,11 @@ namespace CUC260905.Economy
     /// </summary>
     public interface IPacketRewardSystem : ISystem
     {
-        /// <summary>每成功完成一次数据包传输发放的金币数。</summary>
-        int RewardPerTransmission { get; }
+        /// <summary>每成功完成一次数据包传输可获得的最小金币数。</summary>
+        int MinimumRewardPerTransmission { get; }
+
+        /// <summary>每成功完成一次数据包传输可获得的最大奖励金币数。</summary>
+        int MaximumRewardPerTransmission { get; }
     }
 
     /// <summary>
@@ -21,28 +24,36 @@ namespace CUC260905.Economy
     /// </summary>
     public sealed class PacketRewardSystem : AbstractSystem, IPacketRewardSystem
     {
-        /// <summary>未指定时使用的单次奖励数值（数值设计 v1：每次成功传输 2 金币，见 docs/numerical-design.md §5）。</summary>
-        public const int DefaultRewardPerTransmission = 2;
+        /// <summary>每次成功传输奖励的下限（金币）。</summary>
+        public const int DefaultMinimumRewardPerTransmission = 3;
 
-        private readonly int mRewardPerTransmission;
+        /// <summary>每次成功传输奖励的上限（金币）。</summary>
+        public const int DefaultMaximumRewardPerTransmission = 4;
+
+        private readonly System.Random mRewardRandom;
         private IUnRegister mTransmittedRegistration;
 
         public PacketRewardSystem()
-            : this(DefaultRewardPerTransmission)
+            : this(new System.Random())
         {
         }
 
-        public PacketRewardSystem(int rewardPerTransmission)
+        /// <summary>
+        /// 传入随机源以便测试复现奖励序列；运行时默认使用独立随机源。
+        /// </summary>
+        public PacketRewardSystem(System.Random rewardRandom)
         {
-            // 奖励数值不允许为非正数；非法时回退到默认值，保持不变量。
-            mRewardPerTransmission = rewardPerTransmission > 0
-                ? rewardPerTransmission
-                : DefaultRewardPerTransmission;
+            mRewardRandom = rewardRandom ?? new System.Random();
         }
 
-        public int RewardPerTransmission
+        public int MinimumRewardPerTransmission
         {
-            get { return mRewardPerTransmission; }
+            get { return DefaultMinimumRewardPerTransmission; }
+        }
+
+        public int MaximumRewardPerTransmission
+        {
+            get { return DefaultMaximumRewardPerTransmission; }
         }
 
         protected override void OnInit()
@@ -67,8 +78,12 @@ namespace CUC260905.Economy
                 return;
             }
 
+            int reward = mRewardRandom.Next(0, 2) == 0
+                ? DefaultMinimumRewardPerTransmission
+                : DefaultMaximumRewardPerTransmission;
+
             // 余额写入由 EconomySystem 校验（参数非法或溢出时返回 false），此处不额外处理。
-            economySystem.Add(mRewardPerTransmission);
+            economySystem.Add(reward);
         }
     }
 }

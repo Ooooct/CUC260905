@@ -13,7 +13,7 @@ namespace CUC260905.Network
     /// </summary>
     [DisallowMultipleComponent]
     [RequireComponent(typeof(NetworkNodeRegistrar))]
-    public sealed class NodeConnectionDragger : MonoBehaviour, IController, IDraggable
+    public sealed class NodeConnectionDragger : MonoBehaviour, IController, IDraggable, IPauseAllowedDrag
     {
         private NetworkNodeRegistrar mRegistrar;
         private INetworkConnectionTool mTool;

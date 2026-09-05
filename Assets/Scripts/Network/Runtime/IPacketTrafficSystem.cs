@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using CUC260905.Message;
 using QFramework;
+using UnityEngine;
 
 namespace CUC260905.Network
 {
@@ -18,7 +19,7 @@ namespace CUC260905.Network
             float loadCostWeight,
             string messageTargetId,
             double now,
-            Random random);
+            System.Random random);
 
         /// <summary>向指定用户节点发送数据包；主要供规则测试和后续任务目标使用。</summary>
         PacketTransmissionResult SendPacket(
@@ -70,7 +71,7 @@ namespace CUC260905.Network
             float loadCostWeight,
             string messageTargetId,
             double now,
-            Random random)
+            System.Random random)
         {
             if (random == null)
             {
@@ -81,7 +82,8 @@ namespace CUC260905.Network
             foreach (NodeDescriptor node in mTopologyModel.Nodes)
             {
                 if (node.Role == NetworkNodeRole.User &&
-                    !string.Equals(node.NodeId, sourceNodeId, StringComparison.Ordinal))
+                    !string.Equals(node.NodeId, sourceNodeId, StringComparison.Ordinal) &&
+                    mTopologyModel.IsDeploymentAccessComplete(node.NodeId, now))
                 {
                     destinationNodeIds.Add(node.NodeId);
                 }
@@ -89,14 +91,40 @@ namespace CUC260905.Network
 
             if (destinationNodeIds.Count == 0)
             {
-                // 没有其他用户节点可作目标：这不是路由失败，而是"暂无发送目标"。
-                // 静默返回，不发布消息与事件，避免单节点场景反复刷屏、
+                // 没有其他"已接入"用户节点可作目标：这不是路由失败，而是"暂无发送目标"。
+                // 静默返回，不发布消息与事件，避免单节点/新部署场景反复刷屏、
                 // 误触发总体负载惩罚与失败反馈圆。
                 PruneExpiredPackets(now);
                 return PacketTransmissionResult.DestinationUnavailable;
             }
 
-            string destinationNodeId = destinationNodeIds[random.Next(destinationNodeIds.Count)];
+            // 距离加权目标选取：权重近似对数正态左尾曲线，距离越近的目标被选中概率越高。
+            // 依赖 INodePositionProvider 提供源/目标世界坐标；源位置或任意候选位置不可用时，
+            // 回退为历史均匀随机（保证未注册位置源的既有调用与测试不回归）。
+            INodePositionProvider positionProvider = this.GetUtility<INodePositionProvider>();
+            string destinationNodeId = null;
+            if (positionProvider != null &&
+                positionProvider.TryGetNodePosition(sourceNodeId, out Vector3 sourcePosition))
+            {
+                Vector3? PositionOf(string candidateNodeId)
+                {
+                    return positionProvider.TryGetNodePosition(candidateNodeId, out Vector3 position)
+                        ? (Vector3?)position
+                        : null;
+                }
+
+                destinationNodeId = DistanceWeightedTargetSelector.Select(
+                    random,
+                    destinationNodeIds,
+                    sourcePosition,
+                    PositionOf);
+            }
+
+            if (destinationNodeId == null)
+            {
+                destinationNodeId = destinationNodeIds[random.Next(destinationNodeIds.Count)];
+            }
+
             return SendPacket(
                 sourceNodeId,
                 destinationNodeId,
@@ -115,17 +143,19 @@ namespace CUC260905.Network
             double now)
         {
             PruneExpiredPackets(now);
-            PacketTransmissionResult validationResult = ValidateRequest(sourceNodeId, destinationNodeId, packetSize);
+            PacketTransmissionResult validationResult = ValidateRequest(sourceNodeId, destinationNodeId, packetSize, now);
             if (validationResult != PacketTransmissionResult.Success)
             {
                 return PublishUnreachable(sourceNodeId, destinationNodeId, packetSize, validationResult, messageTargetId);
             }
 
+            HashSet<string> capacityExceededNodeIds = new HashSet<string>(StringComparer.Ordinal);
             List<string> pathNodeIds = FindLowestCostPath(
                 sourceNodeId,
                 destinationNodeId,
                 packetSize,
-                Math.Max(0f, loadCostWeight));
+                Math.Max(0f, loadCostWeight),
+                capacityExceededNodeIds);
             if (pathNodeIds == null)
             {
                 return PublishUnreachable(
@@ -133,7 +163,8 @@ namespace CUC260905.Network
                     destinationNodeId,
                     packetSize,
                     PacketTransmissionResult.Unreachable,
-                    messageTargetId);
+                    messageTargetId,
+                    new List<string>(capacityExceededNodeIds));
             }
 
             ReserveServerCapacity(pathNodeIds, packetSize, now);
@@ -145,7 +176,11 @@ namespace CUC260905.Network
             return PacketTransmissionResult.Success;
         }
 
-        private PacketTransmissionResult ValidateRequest(string sourceNodeId, string destinationNodeId, float packetSize)
+        private PacketTransmissionResult ValidateRequest(
+            string sourceNodeId,
+            string destinationNodeId,
+            float packetSize,
+            double now)
         {
             if (float.IsNaN(packetSize) || float.IsInfinity(packetSize) || packetSize <= 0f)
             {
@@ -162,10 +197,22 @@ namespace CUC260905.Network
                 return PacketTransmissionResult.SourceNotUserNode;
             }
 
+            // 部署接入：源用户节点在部署接入时间内不能发送。
+            if (!mTopologyModel.IsDeploymentAccessComplete(sourceNodeId, now))
+            {
+                return PacketTransmissionResult.SourceNotAccessible;
+            }
+
             if (!mTopologyModel.TryGetNode(destinationNodeId, out NodeDescriptor destinationNode) ||
                 destinationNode.Role != NetworkNodeRole.User)
             {
                 return PacketTransmissionResult.DestinationNotUserNode;
+            }
+
+            // 部署接入：目标用户节点在部署接入时间内不能接收。
+            if (!mTopologyModel.IsDeploymentAccessComplete(destinationNodeId, now))
+            {
+                return PacketTransmissionResult.DestinationNotAccessible;
             }
 
             // 用户节点只会向"其他"用户节点发送数据包，不允许自我发送。
@@ -181,7 +228,8 @@ namespace CUC260905.Network
             string sourceNodeId,
             string destinationNodeId,
             float packetSize,
-            float loadCostWeight)
+            float loadCostWeight,
+            ISet<string> capacityExceededNodeIds)
         {
             Dictionary<string, float> distances = new Dictionary<string, float>(StringComparer.Ordinal)
             {
@@ -212,8 +260,18 @@ namespace CUC260905.Network
                     {
                         neighborCost = 1f;
                     }
-                    else if (!CanUseAsRouteNode(neighborNodeId, packetSize, loadCostWeight, out neighborCost))
+                    else if (!CanUseAsRouteNode(
+                                 neighborNodeId,
+                                 packetSize,
+                                 loadCostWeight,
+                                 out neighborCost,
+                                 out bool exceedsCapacity))
                     {
+                        if (exceedsCapacity)
+                        {
+                            capacityExceededNodeIds?.Add(neighborNodeId);
+                        }
+
                         continue;
                     }
 
@@ -234,9 +292,11 @@ namespace CUC260905.Network
             string nodeId,
             float packetSize,
             float loadCostWeight,
-            out float nodeCost)
+            out float nodeCost,
+            out bool exceedsCapacity)
         {
             nodeCost = 0f;
+            exceedsCapacity = false;
             if (!mTopologyModel.TryGetNode(nodeId, out NodeDescriptor node) ||
                 node.Role != NetworkNodeRole.Server ||
                 !mTopologyModel.TryGetServerCapabilities(nodeId, out ServerNodeCapabilities capabilities))
@@ -248,6 +308,7 @@ namespace CUC260905.Network
             float currentLoad = capabilities.CurrentDataLoadPerSecond.Value;
             if (capacity > 0f && currentLoad + packetSize > capacity)
             {
+                exceedsCapacity = true;
                 return false;
             }
 
@@ -360,7 +421,8 @@ namespace CUC260905.Network
             string destinationNodeId,
             float packetSize,
             PacketTransmissionResult result,
-            string messageTargetId)
+            string messageTargetId,
+            IReadOnlyList<string> problemNodeIds = null)
         {
             string targetText = string.IsNullOrWhiteSpace(destinationNodeId) ? "用户节点" : destinationNodeId;
             if (mMessageSystem != null && !string.IsNullOrWhiteSpace(messageTargetId))
@@ -370,7 +432,12 @@ namespace CUC260905.Network
                     $"数据包不可达：{sourceNodeId} 无法向 {targetText} 发送 {packetSize:0.#} Mb（{result}）。");
             }
 
-            this.SendEvent(new PacketUnreachableEvent(sourceNodeId, destinationNodeId, packetSize, result));
+            this.SendEvent(new PacketUnreachableEvent(
+                sourceNodeId,
+                destinationNodeId,
+                packetSize,
+                result,
+                problemNodeIds));
             return result;
         }
 

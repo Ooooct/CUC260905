@@ -1,4 +1,3 @@
-using CUC260905.Game;
 using CUC260905.Interaction;
 using QFramework;
 using UnityEngine;
@@ -30,7 +29,6 @@ namespace CUC260905.Placement
         private IPlacementInstantiator mInstantiator;
         private IPointerFrameSource mFrameSource;
         private IInteractionInputSystem mInteractionInput;
-        private IGamePauseState mPauseState;
         private Vector3 mLastWorldPosition;
 
         public bool IsPlacing
@@ -45,7 +43,6 @@ namespace CUC260905.Placement
             mInstantiator = this.GetUtility<IPlacementInstantiator>();
             mFrameSource = this.GetUtility<IPointerFrameSource>();
             mInteractionInput = this.GetSystem<IInteractionInputSystem>();
-            mPauseState = this.GetModel<IGamePauseState>();
 
             if (mModel == null ||
                 mPointerMapper == null ||
@@ -62,10 +59,10 @@ namespace CUC260905.Placement
             Cancel();
         }
 
-        /// <summary>进入放置模式；若已在放置模式则仅切换 prefab。暂停期间拒绝进入。</summary>
+        /// <summary>进入放置模式；若已在放置模式则仅切换 prefab。</summary>
         public void Begin(GameObject prefab)
         {
-            if (prefab == null || (mPauseState != null && mPauseState.IsPaused.Value))
+            if (prefab == null)
             {
                 return;
             }
@@ -111,10 +108,10 @@ namespace CUC260905.Placement
             EndPlacement();
         }
 
-        /// <summary>每帧入口：由激活的 PlacementButton 调用，消费最近一帧指针数据。暂停期间冻结放置。</summary>
+        /// <summary>每帧入口：由激活的 PlacementButton 调用，消费最近一帧指针数据。</summary>
         public void ProcessFrame(float unscaledTime)
         {
-            if (!IsPlacing || (mPauseState != null && mPauseState.IsPaused.Value))
+            if (!IsPlacing)
             {
                 return;
             }

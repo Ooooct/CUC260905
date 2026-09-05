@@ -80,6 +80,40 @@ namespace CUC260905.Tests
         }
 
         [Test]
+        public void TryConsumeImmediately_FirstServerRegistered_ConsumesFirstIndexAndSchedulesNextInterval()
+        {
+            const float IntervalMin = 0.4f;
+            const float IntervalMax = 0.8f;
+            const double Now = 1000.0;
+            UserNodeSpawnScheduler scheduler = CreateScheduler(IntervalMin, IntervalMax, 7);
+            scheduler.Reset(Now);
+
+            bool consumed = scheduler.TryConsumeImmediately(Now, 10, out int index);
+
+            Assert.That(consumed, Is.True);
+            Assert.That(index, Is.EqualTo(0));
+            Assert.That(scheduler.SpawnedCount, Is.EqualTo(1));
+            double delay = scheduler.NextSpawnAt - Now;
+            Assert.That(delay, Is.GreaterThanOrEqualTo(IntervalMin - Epsilon));
+            Assert.That(delay, Is.LessThanOrEqualTo(IntervalMax + Epsilon));
+        }
+
+        [Test]
+        public void TryConsumeImmediately_SubsequentConsume_ContinuesAtSecondIndex()
+        {
+            UserNodeSpawnScheduler scheduler = CreateScheduler(0.05f, 0.05f, 7);
+            const double Now = 0.0;
+            scheduler.Reset(Now);
+            Assert.That(scheduler.TryConsumeImmediately(Now, 10, out int immediateIndex), Is.True);
+
+            bool consumed = scheduler.TryConsume(Now + 1.0, 10, out int nextIndex);
+
+            Assert.That(immediateIndex, Is.EqualTo(0));
+            Assert.That(consumed, Is.True);
+            Assert.That(nextIndex, Is.EqualTo(1));
+        }
+
+        [Test]
         public void Intervals_StayWithinConfiguredRange_AcrossManyConsumes()
         {
             const float IntervalMin = 0.25f;

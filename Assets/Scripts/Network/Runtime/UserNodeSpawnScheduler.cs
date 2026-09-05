@@ -51,6 +51,24 @@ namespace CUC260905.Network
         }
 
         /// <summary>
+        /// 立即推进一个生成节拍，并从当前时刻开始安排后续随机间隔。
+        /// 用于首个服务器建成后立刻生成首个用户节点；后续节奏仍与普通生成一致。
+        /// </summary>
+        public bool TryConsumeImmediately(double now, int candidateCount, out int index)
+        {
+            index = -1;
+            if (mSpawnedCount >= candidateCount)
+            {
+                return false;
+            }
+
+            index = mSpawnedCount;
+            mSpawnedCount++;
+            mNextSpawnAt = now + SampleInterval();
+            return true;
+        }
+
+        /// <summary>
         /// 到达下一次生成时间且未耗尽时，推进一个生成节拍并返回 true；否则返回 false（index 恒为 -1）。
         /// 输出的 index 为本次节拍的序号（严格按 0、1、2… 递增），
         /// 配合"随序号逐步外扩"的逐点生成器即呈现"从中心逐步外移"。

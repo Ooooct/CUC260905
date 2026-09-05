@@ -62,15 +62,19 @@ namespace CUC260905.Interaction
             ITargetResolver targetResolver = CreateTargetResolver();
             PointerFrameSource frameSource = new PointerFrameSource();
             PlacementModel placementModel = new PlacementModel();
-            NetworkTopologyModel networkTopologyModel = new NetworkTopologyModel();
-            EconomyModel economyModel = new EconomyModel();
+            GamePauseState gamePauseState = new GamePauseState();
+            // 用户节点部署接入时间取全局统一配置（NetworkTopologyModel.DefaultDeploymentAccessTime）。
+            NetworkTopologyModel networkTopologyModel =
+                new NetworkTopologyModel(NetworkTopologyModel.DefaultDeploymentAccessTime);
+            // 数值设计 v1：玩家初始持有 100 金币（docs/numerical-design.md §3）。
+            EconomyModel economyModel = new EconomyModel(100);
 
             // Utility 先注册，随后 Model 和 System 可在各自 OnInit 中按接口获取依赖。
             RegisterUtility<IInputSourceUtility>(new LegacyInputUtility());
             RegisterUtility<IIntentSinkResolver>(sinkResolver);
             RegisterUtility<ITargetResolver>(targetResolver);
-            RegisterUtility<IIntentDispatcher>(new IntentDispatcher(sinkResolver));
-            RegisterUtility<INodeIdentitySource>(new GuidNodeIdentitySource());
+            RegisterUtility<IIntentDispatcher>(new IntentDispatcher(sinkResolver, gamePauseState));
+            RegisterUtility<INodeIdentitySource>(new SequentialNodeIdentitySource());
             RegisterUtility<INodeDisplayNameSource>(new SequentialNodeDisplayNameSource());
 
             // 每帧指针帧数据源：Interaction 写入，Placement 读取（同一实例双端口）。
@@ -86,7 +90,7 @@ namespace CUC260905.Interaction
             RegisterModel<IPointerIntentModel>(
                 new PointerIntentModel(sConfiguration.DragThresholdPixels));
             RegisterModel<IPlacementModel>(placementModel);
-            RegisterModel<IGamePauseState>(new GamePauseState());
+            RegisterModel<IGamePauseState>(gamePauseState);
             RegisterModel<INetworkTopologyModel>(networkTopologyModel);
             RegisterModel<IEconomyModel>(economyModel);
             RegisterSystem<IInteractionInputSystem>(new InteractionInputSystem());

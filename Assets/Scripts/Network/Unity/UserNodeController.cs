@@ -14,8 +14,11 @@ namespace CUC260905.Network
     /// 节点登记由同物体上的 NetworkNodeRegistrar 负责（Role = User，mNodeId 留空时自动生成
     /// "user-" 前缀 ID），注册键与服务器节点（"server-" 前缀）天然区分，
     /// 供后续业务逻辑按角色分派（例如：连线、选中、用户设备管理）。
-    /// 同时负责该用户节点的数据包生成调度：部署后等待随机冷却，随后以随机间隔
-    /// 向随机用户节点发送随机大小的数据包（经服务器中继）。真正的路由与吞吐记账均由 IPacketTrafficSystem 完成。
+    /// 同时负责该用户节点的数据包生成调度：部署后须等待全局统一的部署接入时间
+    /// （由 NetworkTopologyModel.DeploymentAccessTime 暴露；接入前既不能发送、也不能被作为接收目标），
+    /// 接入完成后以随机间隔向随机用户节点发送数据包（经服务器中继）。
+    /// 单包大小随该节点累计发送次数沿类对数曲线增长（SendPaceCurve），并在曲线均值附近随机抖动。
+    /// 真正的接入门控、路由与吞吐记账均由 INetworkTopologyModel / IPacketTrafficSystem 完成。
     ///
     /// 场景装配：与 InteractionTarget、CapabilitySinkAdapter、NetworkNodeRegistrar 同物体，
     /// Collider 可位于子节点（Resolver 按父级查找 InteractionTarget）。
@@ -26,24 +29,33 @@ namespace CUC260905.Network
     public sealed class UserNodeController : MonoBehaviour, IController, IClickable
     {
         [Header("数据包配置")]
-        [SerializeField, Min(0f)]
-        [Tooltip("节点部署后第一次发送前的随机冷却下限（秒）。")]
-        private float mDeploymentCooldownMin = 0.5f;
-        [SerializeField, Min(0f)]
-        [Tooltip("节点部署后第一次发送前的随机冷却上限（秒）。")]
-        private float mDeploymentCooldownMax = 1.5f;
         [SerializeField, Min(0.01f)]
         [Tooltip("两次数据包发送之间的随机间隔下限（秒）。")]
-        private float mSendIntervalMin = 0.8f;
+        private float mSendIntervalMin = 2f;
         [SerializeField, Min(0.01f)]
         [Tooltip("两次数据包发送之间的随机间隔上限（秒）。")]
-        private float mSendIntervalMax = 1.8f;
+        private float mSendIntervalMax = 4f;
         [SerializeField, Min(0.01f)]
-        [Tooltip("单个数据包的随机大小下限（Mb）。")]
-        private float mPacketSizeMin = 10f;
+        [Tooltip("发送次数为 0 时的平均单包大小（Mb）。")]
+        private float mPacketSizeBaseMean = 15f;
         [SerializeField, Min(0.01f)]
-        [Tooltip("单个数据包的随机大小上限（Mb）。")]
-        private float mPacketSizeMax = 30f;
+        [Tooltip("发送次数饱和后的平均单包大小（Mb）；随发送次数按类对数曲线增长趋近该值。")]
+        private float mPacketSizeCeilingMean = 25f;
+        [SerializeField, Min(1)]
+        [Tooltip("单包大小增长达到饱和所需的发送次数；次数越大曲线越平缓。")]
+        private int mSaturationSendCount = 150;
+        [SerializeField, Min(0.01f)]
+        [Tooltip("类对数曲线曲率：越大前期增长越快、越早趋近上限。")]
+        private float mGrowthCurvature = 1f;
+        [SerializeField, Min(0f)]
+        [Tooltip("单包大小在曲线均值上的乘性随机抖动比例（±jitter）。")]
+        private float mPacketSizeJitter = 0.25f;
+        [SerializeField, Min(0.01f)]
+        [Tooltip("单包大小的绝对下限（Mb）。")]
+        private float mPacketSizeMin = 5f;
+        [SerializeField, Min(0.01f)]
+        [Tooltip("单包大小的绝对上限（Mb）。")]
+        private float mPacketSizeMax = 40f;
         [SerializeField, Min(0f)]
         [Tooltip("路由对服务器预测利用率的偏好权重；越高越主动绕开拥堵服务器。")]
         private float mLoadCostWeight = 4f;
@@ -73,6 +85,7 @@ namespace CUC260905.Network
         private System.Random mRandom;
         private bool mScheduleStarted;
         private double mNextSendAt;
+        private int mSendCount;
 
         // Start 晚于 InputController.Awake；节点登记的先后顺序不固定，Update 会等待登记成功。
         private void Start()
@@ -131,10 +144,17 @@ namespace CUC260905.Network
                 return;
             }
 
+            // 部署接入：接入时间未过完前，本节点既不能发送、也不能被选为接收目标
+            // （接收门控由 PacketTrafficSystem 强制）；接入完成才启动周期发送调度。
+            if (!mTopologyModel.IsDeploymentAccessComplete(mRegistrar.NodeId, now))
+            {
+                return;
+            }
+
             if (!mScheduleStarted)
             {
                 mScheduleStarted = true;
-                mNextSendAt = now + SampleRange(mDeploymentCooldownMin, mDeploymentCooldownMax);
+                mNextSendAt = now + Mathf.Max(0.01f, SampleRange(mSendIntervalMin, mSendIntervalMax));
                 return;
             }
 
@@ -143,7 +163,17 @@ namespace CUC260905.Network
                 return;
             }
 
-            float packetSize = SampleRange(mPacketSizeMin, mPacketSizeMax);
+            float packetSize = SendPaceCurve.SamplePacketSize(
+                mRandom,
+                mSendCount,
+                mPacketSizeBaseMean,
+                mPacketSizeCeilingMean,
+                mGrowthCurvature,
+                mSaturationSendCount,
+                mPacketSizeJitter,
+                mPacketSizeMin,
+                mPacketSizeMax);
+            mSendCount++;
             mTrafficSystem.SendRandomPacket(
                 mRegistrar.NodeId,
                 packetSize,

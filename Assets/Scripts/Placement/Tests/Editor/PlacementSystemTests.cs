@@ -155,17 +155,17 @@ namespace CUC260905.Tests
         }
 
         [Test]
-        public void Begin_WhilePaused_DoesNotEnterPlacing()
+        public void Begin_WhilePaused_EntersPlacing()
         {
             mPauseState.IsPaused.Value = true;
 
             mSystem.Begin(NewObj("prefab"));
 
-            Assert.That(mSystem.IsPlacing, Is.False, "暂停期间不应进入放置模式");
+            Assert.That(mSystem.IsPlacing, Is.True, "暂停期间应能进入服务器部署模式");
         }
 
         [Test]
-        public void ProcessFrame_WhilePaused_FreezesPlacement()
+        public void ProcessFrame_WhilePaused_PlacesOnce()
         {
             mSystem.Begin(NewObj("prefab"));
             mPauseState.IsPaused.Value = true;
@@ -174,8 +174,8 @@ namespace CUC260905.Tests
             mFrameSource.Write(new PointerFrameEvent(screen, LeftDown(screen)));
             mSystem.ProcessFrame(0.0f);
 
-            Assert.That(mInstantiator.Instantiated, Is.Zero, "暂停期间不应放置");
-            Assert.That(mSystem.IsPlacing, Is.True, "暂停期间放置模式应保持冻结，不放置也不退出");
+            Assert.That(mInstantiator.Instantiated, Is.EqualTo(1), "暂停期间应能部署服务器");
+            Assert.That(mSystem.IsPlacing, Is.False, "单次部署成功后应退出放置模式");
         }
 
         [Test]

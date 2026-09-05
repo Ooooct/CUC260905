@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using CUC260905.Game;
 using QFramework;
 using UnityEngine;
 
@@ -27,7 +26,6 @@ namespace CUC260905.Interaction
         private IPointerIntentModel mPointerIntentModel;
         private IPointerFrameSink mFrameSink;
         private IPlacementInputGate mPlacementGate;
-        private IGamePauseState mPauseState;
         private Vector2 mLastScreenPosition;
 
         protected override void OnInit()
@@ -48,7 +46,6 @@ namespace CUC260905.Interaction
             // 指针帧数据源与输入门控为可选依赖：未注册放置域时行为与旧版一致。
             mFrameSink = this.GetUtility<IPointerFrameSink>();
             mPlacementGate = this.GetUtility<IPlacementInputGate>();
-            mPauseState = this.GetModel<IGamePauseState>();
         }
 
         /// <summary>采集本帧信号，逐个解析目标，再交给 Model 解释意图。</summary>
@@ -62,10 +59,9 @@ namespace CUC260905.Interaction
                 mLastScreenPosition = signal.ScreenPosition;
             }
 
-            // 放置等独占输入或暂停期间：不解释意图（抑制世界点击/拖拽/悬浮），
-            // 但仍发布本帧数据，供相机浏览等非缩放时间消费者使用。
-            bool suppressed = (mPlacementGate != null && mPlacementGate.IsBlocked) ||
-                              (mPauseState != null && mPauseState.IsPaused.Value);
+            // 放置模式独占世界输入，但仍发布本帧数据，供放置与相机浏览等消费者使用。
+            // 暂停时的能力筛选由 IntentDispatcher 完成：仅显式声明可暂停拖拽的能力会收到意图。
+            bool suppressed = mPlacementGate != null && mPlacementGate.IsBlocked;
             if (suppressed)
             {
                 PublishFrame();

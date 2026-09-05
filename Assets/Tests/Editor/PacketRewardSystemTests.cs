@@ -19,7 +19,7 @@ namespace CUC260905.Tests
         {
             PacketRewardTestArchitecture.Reset();
             EconomyModel model = new EconomyModel();
-            PacketRewardTestArchitecture.Configure(model);
+            PacketRewardTestArchitecture.Configure(model, new SequenceRandom(0, 1, 0));
             mModel = PacketRewardTestArchitecture.Interface.GetModel<IEconomyModel>();
             mRewardSystem = PacketRewardTestArchitecture.Interface.GetSystem<IPacketRewardSystem>();
         }
@@ -31,18 +31,31 @@ namespace CUC260905.Tests
         }
 
         [Test]
-        public void DefaultReward_IsTwoCoinsPerTransmission()
+        public void DefaultRewardRange_IsThreeToFourCoinsPerTransmission()
         {
-            // 数值设计 v1（docs/numerical-design.md §5）：每成功传输 2 金币。
-            Assert.That(mRewardSystem.RewardPerTransmission, Is.EqualTo(2));
+            Assert.That(mRewardSystem.MinimumRewardPerTransmission, Is.EqualTo(3));
+            Assert.That(mRewardSystem.MaximumRewardPerTransmission, Is.EqualTo(4));
         }
 
         [Test]
-        public void PacketTransmitted_AddsTwoCoins()
+        public void PacketTransmitted_AddsThreeCoinsWhenRandomSelectsLowerReward()
         {
             PublishTransmitted();
 
-            Assert.That(mModel.Balance.Value, Is.EqualTo(2));
+            Assert.That(mModel.Balance.Value, Is.EqualTo(3));
+        }
+
+        [Test]
+        public void PacketTransmitted_AddsFourCoinsWhenRandomSelectsUpperReward()
+        {
+            PacketRewardTestArchitecture.Reset();
+            EconomyModel model = new EconomyModel();
+            PacketRewardTestArchitecture.Configure(model, new SequenceRandom(1));
+            mModel = PacketRewardTestArchitecture.Interface.GetModel<IEconomyModel>();
+
+            PublishTransmitted();
+
+            Assert.That(mModel.Balance.Value, Is.EqualTo(4));
         }
 
         [Test]
@@ -52,7 +65,7 @@ namespace CUC260905.Tests
             PublishTransmitted();
             PublishTransmitted();
 
-            Assert.That(mModel.Balance.Value, Is.EqualTo(6));
+            Assert.That(mModel.Balance.Value, Is.EqualTo(10));
         }
 
         [Test]
@@ -70,7 +83,7 @@ namespace CUC260905.Tests
             PublishTransmitted();
             PublishTransmitted();
 
-            Assert.That(mModel.Balance.Value, Is.EqualTo(4));
+            Assert.That(mModel.Balance.Value, Is.EqualTo(7));
         }
 
         [Test]
@@ -78,7 +91,7 @@ namespace CUC260905.Tests
         {
             PacketRewardTestArchitecture.Reset();
             EconomyModel model = new EconomyModel(int.MaxValue);
-            PacketRewardTestArchitecture.Configure(model);
+            PacketRewardTestArchitecture.Configure(model, new SequenceRandom(0));
             mModel = PacketRewardTestArchitecture.Interface.GetModel<IEconomyModel>();
             mRewardSystem = PacketRewardTestArchitecture.Interface.GetSystem<IPacketRewardSystem>();
 
@@ -108,9 +121,12 @@ namespace CUC260905.Tests
         {
             private static EconomyModel sModel;
 
-            public static void Configure(EconomyModel model)
+            private static System.Random sRewardRandom;
+
+            public static void Configure(EconomyModel model, System.Random rewardRandom)
             {
                 sModel = model;
+                sRewardRandom = rewardRandom;
             }
 
             public static void Reset()
@@ -121,13 +137,32 @@ namespace CUC260905.Tests
                 }
 
                 sModel = null;
+                sRewardRandom = null;
             }
 
             protected override void Init()
             {
                 RegisterModel<IEconomyModel>(sModel);
                 RegisterSystem<IEconomySystem>(new EconomySystem(sModel));
-                RegisterSystem<IPacketRewardSystem>(new PacketRewardSystem());
+                RegisterSystem<IPacketRewardSystem>(new PacketRewardSystem(sRewardRandom));
+            }
+        }
+
+        private sealed class SequenceRandom : System.Random
+        {
+            private readonly int[] mValues;
+            private int mIndex;
+
+            public SequenceRandom(params int[] values)
+            {
+                mValues = values;
+            }
+
+            public override int Next(int minValue, int maxValue)
+            {
+                int value = mValues[mIndex % mValues.Length];
+                mIndex++;
+                return minValue + value % (maxValue - minValue);
             }
         }
     }

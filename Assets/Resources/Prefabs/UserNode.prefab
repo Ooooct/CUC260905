@@ -14,6 +14,8 @@ GameObject:
   - component: {fileID: 2414985090701902741}
   - component: {fileID: 4718744633569114988}
   - component: {fileID: 2604004829781413992}
+  - component: {fileID: 8137095945321815328}
+  - component: {fileID: 984216735120394716}
   m_Layer: 0
   m_Name: UserNode
   m_TagString: Untagged
@@ -69,12 +71,15 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 8f3a2c1b5d6e4f7a9b0c1d2e3f4a5b6c, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  mDeploymentCooldownMin: 0.5
-  mDeploymentCooldownMax: 1.5
-  mSendIntervalMin: 0.8
-  mSendIntervalMax: 1.8
-  mPacketSizeMin: 10
-  mPacketSizeMax: 30
+  mSendIntervalMin: 2
+  mSendIntervalMax: 4
+  mPacketSizeBaseMean: 15
+  mPacketSizeCeilingMean: 25
+  mSaturationSendCount: 150
+  mGrowthCurvature: 1
+  mPacketSizeJitter: 0.25
+  mPacketSizeMin: 5
+  mPacketSizeMax: 40
   mLoadCostWeight: 4
   mMessageTargetId: MainTerminal
   mBaseColors:
@@ -121,6 +126,37 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   mStartScaleFactor: 0.5
   mDuration: 0.5
+  mEase: 27
+--- !u!114 &8137095945321815328
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1264185087910585243}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 706c0ade5fa548c4eab847a8b84f09c5, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  mRadius: 0.5
+  mOpacity: 0.5
+  mSortingLayer: Default
+  mSortingOrder: 1
+--- !u!114 &984216735120394716
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1264185087910585243}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b13975512cf349a3871014a54151d2c6, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  mHoverScaleFactor: 1.2
+  mDuration: 0.2
   mEase: 27
 --- !u!1 &8833697508938930104
 GameObject:

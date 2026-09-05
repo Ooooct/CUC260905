@@ -21,7 +21,8 @@ namespace CUC260905.Feedback
                 request.Position,
                 radius,
                 request.Color,
-                duration);
+                duration,
+                request.ShowOffscreenIndicator);
 
             this.SendEvent(new CircleFeedbackRequestedEvent(validRequest));
         }

@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using CUC260905.Feedback;
-using CUC260905.Game;
 using CUC260905.Interaction;
 using CUC260905.Message;
 using CUC260905.Placement;
@@ -53,6 +52,10 @@ namespace CUC260905.Network
         [Tooltip("连线材质；留空时使用 Sprites/Default 自动创建的材质。")]
         [SerializeField] private Material mEdgeMaterial;
         [SerializeField] private int mEdgeSortingOrder = -1;
+        [Tooltip("已建立连线描边的深蓝色。")]
+        [SerializeField] private Color mEdgeOutlineColor = new Color(0.02f, 0.10f, 0.28f, 1.0f);
+        [Tooltip("已建立连线单侧描边的额外宽度（世界单位）。")]
+        [SerializeField, Min(0.0f)] private float mEdgeOutlineWidth = 0.08f;
 
         [Header("Preview Visual")]
         [Tooltip("拖拽预览线的线宽（世界单位，随相机缩放；默认取旧像素值的 1/10）。")]
@@ -83,7 +86,6 @@ namespace CUC260905.Network
         private INetworkTopologyModel mModel;
         private IWorldPointerMapper mPointerMapper;
         private IPlacementInputGate mPlacementGate;
-        private IGamePauseState mPauseState;
         private SpriteRenderer mPreviewRenderer;
         private Vector3 mPreviewAnchor;
         private Vector3 mPreviewFreeEnd;
@@ -142,7 +144,6 @@ namespace CUC260905.Network
             mTopologySystem = this.GetSystem<INetworkTopologySystem>();
             mPointerMapper = this.GetUtility<IWorldPointerMapper>();
             mPlacementGate = this.GetUtility<IPlacementInputGate>();
-            mPauseState = this.GetModel<IGamePauseState>();
             mMessageSystem = this.GetSystem<IMessageSystem>();
             mFeedbackSystem = this.GetSystem<IFeedbackSystem>();
             if (mModel == null || mConnectionSystem == null || mTopologySystem == null)
@@ -289,10 +290,9 @@ namespace CUC260905.Network
                 return;
             }
 
-            // 放置模式独占输入（右键用于取消放置）或暂停期间：不处理连线右键删边。
-            bool suppressed = (mPlacementGate != null && mPlacementGate.IsBlocked) ||
-                              (mPauseState != null && mPauseState.IsPaused.Value);
-            if (suppressed)
+            // 放置模式独占输入，右键必须优先取消部署，避免误删网络边。
+            // 暂停不拦截此路径：暂停期间允许新建、取消预览和删除已建立的网络边。
+            if (mPlacementGate != null && mPlacementGate.IsBlocked)
             {
                 return;
             }
@@ -398,26 +398,56 @@ namespace CUC260905.Network
         private void OnPacketTransmitted(PacketTransmittedEvent e)
         {
             // 成功反馈落在接收节点，直观表示该数据包已经送达。
-            ShowFeedbackAtNode(e.DestinationNodeId, mPacketSuccessRadius, mSuccessColor);
+            ShowFeedbackAtNode(
+                e.DestinationNodeId,
+                mPacketSuccessRadius,
+                mSuccessColor,
+                showOffscreenIndicator: false);
         }
 
         private void OnPacketUnreachable(PacketUnreachableEvent e)
         {
-            // 失败时目标可能不存在，因此在仍可定位的发送节点提示失败。
-            ShowFeedbackAtNode(e.SourceNodeId, mPacketFailureRadius, mFailureColor);
+            // 无论失败原因是什么，都标记起始传输点；容量超限还会附带实际阻塞路由的服务器。
+            HashSet<string> feedbackNodeIds = new HashSet<string>(StringComparer.Ordinal)
+            {
+                e.SourceNodeId
+            };
+            if (e.ProblemNodeIds != null)
+            {
+                foreach (string nodeId in e.ProblemNodeIds)
+                {
+                    if (!string.IsNullOrWhiteSpace(nodeId))
+                    {
+                        feedbackNodeIds.Add(nodeId);
+                    }
+                }
+            }
+
+            foreach (string nodeId in feedbackNodeIds)
+            {
+                ShowFeedbackAtNode(nodeId, mPacketFailureRadius, mFailureColor);
+            }
         }
 
-        private void ShowFeedbackAtNode(string nodeId, float radius, Color color)
+        private void ShowFeedbackAtNode(
+            string nodeId,
+            float radius,
+            Color color,
+            bool showOffscreenIndicator = true)
         {
             if (!TryGetNodePosition(nodeId, out Vector3 position))
             {
                 return;
             }
 
-            ShowFeedbackCircle(position, radius, color);
+            ShowFeedbackCircle(position, radius, color, showOffscreenIndicator);
         }
 
-        private void ShowFeedbackCircle(Vector3 position, float radius, Color color)
+        private void ShowFeedbackCircle(
+            Vector3 position,
+            float radius,
+            Color color,
+            bool showOffscreenIndicator = true)
         {
             if (mFeedbackSystem == null)
             {
@@ -428,7 +458,8 @@ namespace CUC260905.Network
                 position,
                 Mathf.Max(0f, radius),
                 color,
-                Mathf.Max(0f, mFeedbackDuration));
+                Mathf.Max(0f, mFeedbackDuration),
+                showOffscreenIndicator);
             mFeedbackSystem.ShowCircle(request);
         }
 
@@ -526,11 +557,19 @@ namespace CUC260905.Network
                 mEdgeColor,
                 ResolveMaterial(ref mResolvedEdgeMaterial, mEdgeMaterial),
                 mEdgeSortingOrder);
+            GameObject outlineObject = new GameObject("Outline");
+            outlineObject.transform.SetParent(lineObject.transform, false);
+            SpriteRenderer outline = outlineObject.AddComponent<SpriteRenderer>();
+            ApplySpriteConfig(
+                outline,
+                mEdgeOutlineColor,
+                ResolveMaterial(ref mResolvedEdgeMaterial, mEdgeMaterial),
+                mEdgeSortingOrder - 1);
             BoxCollider2D hitCollider = lineObject.AddComponent<BoxCollider2D>();
             // 世界尺寸 = localSize × localScale；RefreshEdgeView 按命中厚度/视觉粗细换算。
             hitCollider.size = new Vector2(1.0f, 1.0f);
 
-            EdgeLineView view = new EdgeLineView(key, firstNodeId, secondNodeId, line, hitCollider);
+            EdgeLineView view = new EdgeLineView(key, firstNodeId, secondNodeId, line, outline, hitCollider);
             mEdgeViews.Add(key, view);
             mColliderViews.Add(hitCollider, view);
             RefreshEdgeView(view);
@@ -637,6 +676,10 @@ namespace CUC260905.Network
                 {
                     // 两端重合：无向量的线段无法定位，保持隐藏。
                     view.Renderer.enabled = false;
+                    if (view.OutlineRenderer != null)
+                    {
+                        view.OutlineRenderer.enabled = false;
+                    }
                     return;
                 }
 
@@ -649,6 +692,15 @@ namespace CUC260905.Network
                     Mathf.Atan2(delta.y, delta.x) * Mathf.Rad2Deg);
                 float visualWidth = Mathf.Max(0.01f, mEdgeWidth);
                 lineTransform.localScale = new Vector3(length, visualWidth, 1.0f);
+                if (view.OutlineRenderer != null)
+                {
+                    float outlineWidth = visualWidth + Mathf.Max(0.0f, mEdgeOutlineWidth) * 2.0f;
+                    Transform outlineTransform = view.OutlineRenderer.transform;
+                    outlineTransform.localPosition = Vector3.zero;
+                    outlineTransform.localRotation = Quaternion.identity;
+                    outlineTransform.localScale = new Vector3(1.0f, outlineWidth / visualWidth, 1.0f);
+                    view.OutlineRenderer.enabled = true;
+                }
 
                 if (view.Collider != null)
                 {
@@ -664,6 +716,10 @@ namespace CUC260905.Network
             {
                 // 端点尚未登记时保持隐藏，避免在原点闪现。
                 view.Renderer.enabled = false;
+                if (view.OutlineRenderer != null)
+                {
+                    view.OutlineRenderer.enabled = false;
+                }
             }
         }
 
@@ -749,6 +805,7 @@ namespace CUC260905.Network
             public readonly string FirstNodeId;
             public readonly string SecondNodeId;
             public readonly SpriteRenderer Renderer;
+            public readonly SpriteRenderer OutlineRenderer;
             public readonly BoxCollider2D Collider;
 
             public EdgeLineView(
@@ -756,12 +813,14 @@ namespace CUC260905.Network
                 string firstNodeId,
                 string secondNodeId,
                 SpriteRenderer renderer,
+                SpriteRenderer outlineRenderer,
                 BoxCollider2D collider)
             {
                 Key = key;
                 FirstNodeId = firstNodeId;
                 SecondNodeId = secondNodeId;
                 Renderer = renderer;
+                OutlineRenderer = outlineRenderer;
                 Collider = collider;
             }
         }
