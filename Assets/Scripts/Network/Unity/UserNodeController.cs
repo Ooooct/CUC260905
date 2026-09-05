@@ -17,7 +17,7 @@ namespace CUC260905.Network
     /// 同时负责该用户节点的数据包生成调度：部署后须等待全局统一的部署接入时间
     /// （由 NetworkTopologyModel.DeploymentAccessTime 暴露；接入前既不能发送、也不能被作为接收目标），
     /// 接入完成后以随机间隔向随机用户节点发送数据包（经服务器中继）。
-    /// 单包大小随该节点累计发送次数沿类对数曲线增长（SendPaceCurve），并在曲线均值附近随机抖动。
+    /// 单包大小随该节点累计发送次数线性增长（SendPaceCurve），并在曲线均值附近随机抖动。
     /// 真正的接入门控、路由与吞吐记账均由 INetworkTopologyModel / IPacketTrafficSystem 完成。
     ///
     /// 场景装配：与 InteractionTarget、CapabilitySinkAdapter、NetworkNodeRegistrar 同物体，
@@ -39,14 +39,11 @@ namespace CUC260905.Network
         [Tooltip("发送次数为 0 时的平均单包大小（Mb）。")]
         private float mPacketSizeBaseMean = 15f;
         [SerializeField, Min(0.01f)]
-        [Tooltip("发送次数饱和后的平均单包大小（Mb）；随发送次数按类对数曲线增长趋近该值。")]
-        private float mPacketSizeCeilingMean = 25f;
+        [Tooltip("发送次数达到饱和值后的平均单包大小（Mb）；此前随发送次数线性增长。")]
+        private float mPacketSizeCeilingMean = 50f;
         [SerializeField, Min(1)]
         [Tooltip("单包大小增长达到饱和所需的发送次数；次数越大曲线越平缓。")]
-        private int mSaturationSendCount = 150;
-        [SerializeField, Min(0.01f)]
-        [Tooltip("类对数曲线曲率：越大前期增长越快、越早趋近上限。")]
-        private float mGrowthCurvature = 1f;
+        private int mSaturationSendCount = 300;
         [SerializeField, Min(0f)]
         [Tooltip("单包大小在曲线均值上的乘性随机抖动比例（±jitter）。")]
         private float mPacketSizeJitter = 0.25f;
@@ -55,7 +52,7 @@ namespace CUC260905.Network
         private float mPacketSizeMin = 5f;
         [SerializeField, Min(0.01f)]
         [Tooltip("单包大小的绝对上限（Mb）。")]
-        private float mPacketSizeMax = 40f;
+        private float mPacketSizeMax = 75f;
         [SerializeField, Min(0f)]
         [Tooltip("路由对服务器预测利用率的偏好权重；越高越主动绕开拥堵服务器。")]
         private float mLoadCostWeight = 4f;
@@ -168,7 +165,6 @@ namespace CUC260905.Network
                 mSendCount,
                 mPacketSizeBaseMean,
                 mPacketSizeCeilingMean,
-                mGrowthCurvature,
                 mSaturationSendCount,
                 mPacketSizeJitter,
                 mPacketSizeMin,

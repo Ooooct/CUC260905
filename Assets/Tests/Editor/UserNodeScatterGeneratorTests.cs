@@ -7,9 +7,9 @@ namespace CUC260905.Tests
 {
     /// <summary>
     /// UserNodeScatterGenerator：锁定"逐点生成、范围逐步外扩、随机且均匀、
-    /// 最小距离保证、服务器节点纳入过近分析、种子确定性、饱和封顶"的行为契约。
+    /// 最小距离保证、服务器节点仅硬性排斥（不参与分布择优）、种子确定性、饱和封顶"的行为契约。
     /// 覆盖：目标数量区间、单次只产一点、范围包络、外扩趋势、两两最小距离、
-    /// 服务器障碍避让、种子确定性与差异性、象限覆盖、稀疏配置均匀度、退化配置。
+    /// 服务器硬性排斥避让、中心填充紧凑性、种子确定性与差异性、象限覆盖、稀疏配置均匀度、退化配置。
     /// </summary>
     public sealed class UserNodeScatterGeneratorTests
     {
@@ -146,6 +146,73 @@ namespace CUC260905.Tests
         }
 
         [Test]
+        public void TryGenerateNextPoint_ServerEnforcesExclusionOnly_DoesNotCreateVoid()
+        {
+            // 服务器只做 MinDistance 硬性排斥（不进入其 0.5 单位内），不参与"最远"择优：
+            // 用户点可以紧贴排斥区边缘，而不会被额外推开形成比 0.5 更大的空洞。
+            const float MinDistance = 0.5f;
+            List<Vector2> servers = new List<Vector2> { new Vector2(2.5f, 0.0f) };
+
+            float nearestAcrossSeeds = float.MaxValue;
+            for (int seed = 1; seed <= 8; seed++)
+            {
+                UserNodeScatterGenerator generator = CreateGenerator(10.0f, MinDistance, 0.5f, 40, 80, seed);
+                generator.Reset();
+
+                float minSqr = MinDistance * MinDistance;
+                float nearestSqr = float.MaxValue;
+                while (generator.TryGenerateNextPoint(servers, out Vector2 point))
+                {
+                    float sqrToServer = (point - servers[0]).sqrMagnitude;
+                    Assert.That(sqrToServer, Is.GreaterThanOrEqualTo(minSqr - Epsilon),
+                        $"seed={seed} 的点 {point} 落入服务器排斥区。");
+                    if (sqrToServer < nearestSqr)
+                    {
+                        nearestSqr = sqrToServer;
+                    }
+                }
+
+                if (nearestSqr < nearestAcrossSeeds)
+                {
+                    nearestAcrossSeeds = nearestSqr;
+                }
+            }
+
+            // 多个种子中应存在紧贴排斥区边缘（<1.0）的用户点，证明服务器未制造额外空洞。
+            Assert.That(Mathf.Sqrt(nearestAcrossSeeds), Is.LessThan(1.0f),
+                "服务器不应把用户点额外推开（仅需避开 0.5），否则会在服务器周围形成空洞。");
+        }
+
+        [Test]
+        public void TryGenerateNextPoint_ServerPresent_UserEvennessStillWellAboveFloor()
+        {
+            // 服务器在场（仅硬性排斥）不应破坏用户点之间的均匀性：用户点两两距离仍显著高于下限。
+            const float MinDistance = 0.5f;
+            List<Vector2> servers = new List<Vector2> { new Vector2(2.5f, 0.0f) };
+            for (int seed = 1; seed <= 5; seed++)
+            {
+                UserNodeScatterGenerator generator = CreateGenerator(10.0f, MinDistance, 0.5f, 60, 80, seed);
+                List<Vector2> points = Drain(generator, servers);
+
+                float minDistSqr = float.MaxValue;
+                for (int i = 0; i < points.Count; i++)
+                {
+                    for (int j = i + 1; j < points.Count; j++)
+                    {
+                        float squared = (points[i] - points[j]).sqrMagnitude;
+                        if (squared < minDistSqr)
+                        {
+                            minDistSqr = squared;
+                        }
+                    }
+                }
+
+                Assert.That(Mathf.Sqrt(minDistSqr), Is.GreaterThan(0.7f),
+                    $"seed={seed} 时用户点分布不够平均（服务器不应影响均匀性）。");
+            }
+        }
+
+        [Test]
         public void TryGenerateNextPoint_SameSeed_ProducesIdenticalSequence()
         {
             UserNodeScatterGenerator first = CreateGenerator(10.0f, 0.5f, 0.5f, 40, 80, 2024);
@@ -207,8 +274,8 @@ namespace CUC260905.Tests
         [Test]
         public void TryGenerateNextPoint_SparseConfig_MinDistanceWellAboveFloor()
         {
-            // 稀疏配置下 Best-Candidate 应把点尽量拉开：最小点距应显著高于 MinDistance 下限
-            // （理想间距 ≈ sqrt(面积/数量) ≈ 2.1，本断言 1.0 远低于预期值，多种子均稳定）。
+            // 紧凑生长（指数 >1）使中心更密，最小点距较旧面积均匀布局有所下降，但仍应显著高于 MinDistance 下限
+            // （50 种子实测最差 ≈0.79，0.7 仍留有裕度；旧断言 1.0 只适用于旧的面积均匀分布）。
             for (int seed = 1; seed <= 5; seed++)
             {
                 UserNodeScatterGenerator generator = CreateGenerator(10.0f, 0.5f, 0.5f, 60, 80, seed);
@@ -226,8 +293,65 @@ namespace CUC260905.Tests
                     }
                 }
 
-                Assert.That(Mathf.Sqrt(minDistSqr), Is.GreaterThan(1.0f),
+                Assert.That(Mathf.Sqrt(minDistSqr), Is.GreaterThan(0.7f),
                     $"seed={seed} 时最小点距不足，分布不够平均。");
+            }
+        }
+
+        [Test]
+        public void DefaultConfig_InnerRadiusIsZero_FillsCenter()
+        {
+            Assert.That(UserNodeScatterConfig.Default.InnerRadius, Is.EqualTo(0.0f),
+                "默认配置应允许填充圆心（InnerRadius=0），使布局更紧凑。");
+        }
+
+        [Test]
+        public void TryGenerateNextPoint_DefaultConfig_FillsCenter()
+        {
+            // 中心默认不留空：InnerRadius=0 + 超线性外扩时首个点贴近圆心，
+            // 多种子下最内点半径恒 < 1.0（理论上限 ≈ sqrt(Range²*(1/MinCount)^1.5) ≈ 0.63）。
+            for (int seed = 1; seed <= 8; seed++)
+            {
+                UserNodeScatterGenerator generator = CreateGenerator(UserNodeScatterConfig.Default, seed);
+                List<Vector2> points = Drain(generator);
+
+                float minR = float.MaxValue;
+                foreach (Vector2 point in points)
+                {
+                    float r = Mathf.Sqrt(point.sqrMagnitude);
+                    if (r < minR)
+                    {
+                        minR = r;
+                    }
+                }
+
+                Assert.That(minR, Is.LessThan(1.0f),
+                    $"seed={seed} 时中心未被填充（最内点半径 {minR:F3}）。");
+            }
+        }
+
+        [Test]
+        public void TryGenerateNextPoint_SceneRange_NoLargeCenterHole()
+        {
+            // 场景配置（范围 20、40–80 点、圆心不留空）：最内点半径应远小于旧面积均匀布局的 ~2.2，
+            // 理论上限 ≈ sqrt(400*(1/40)^1.5) ≈ 1.26，故断言 < 1.5（多种子恒成立）。
+            for (int seed = 1; seed <= 8; seed++)
+            {
+                UserNodeScatterGenerator generator = CreateGenerator(20.0f, 0.5f, 0.0f, 40, 80, seed);
+                List<Vector2> points = Drain(generator);
+
+                float minR = float.MaxValue;
+                foreach (Vector2 point in points)
+                {
+                    float r = Mathf.Sqrt(point.sqrMagnitude);
+                    if (r < minR)
+                    {
+                        minR = r;
+                    }
+                }
+
+                Assert.That(minR, Is.LessThan(1.5f),
+                    $"seed={seed} 时中心空余过大（最内点半径 {minR:F3}）。");
             }
         }
 

@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using CUC260905.Message;
 using QFramework;
-using UnityEngine;
 
 namespace CUC260905.Network
 {
@@ -98,32 +97,8 @@ namespace CUC260905.Network
                 return PacketTransmissionResult.DestinationUnavailable;
             }
 
-            // 距离加权目标选取：权重近似对数正态左尾曲线，距离越近的目标被选中概率越高。
-            // 依赖 INodePositionProvider 提供源/目标世界坐标；源位置或任意候选位置不可用时，
-            // 回退为历史均匀随机（保证未注册位置源的既有调用与测试不回归）。
-            INodePositionProvider positionProvider = this.GetUtility<INodePositionProvider>();
-            string destinationNodeId = null;
-            if (positionProvider != null &&
-                positionProvider.TryGetNodePosition(sourceNodeId, out Vector3 sourcePosition))
-            {
-                Vector3? PositionOf(string candidateNodeId)
-                {
-                    return positionProvider.TryGetNodePosition(candidateNodeId, out Vector3 position)
-                        ? (Vector3?)position
-                        : null;
-                }
-
-                destinationNodeId = DistanceWeightedTargetSelector.Select(
-                    random,
-                    destinationNodeIds,
-                    sourcePosition,
-                    PositionOf);
-            }
-
-            if (destinationNodeId == null)
-            {
-                destinationNodeId = destinationNodeIds[random.Next(destinationNodeIds.Count)];
-            }
+            // 目标选取为均匀随机：在全部已接入的其他用户节点中等概率抽取，与位置无关。
+            string destinationNodeId = destinationNodeIds[random.Next(destinationNodeIds.Count)];
 
             return SendPacket(
                 sourceNodeId,

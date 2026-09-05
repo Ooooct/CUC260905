@@ -74,12 +74,11 @@ MonoBehaviour:
   mSendIntervalMin: 2
   mSendIntervalMax: 4
   mPacketSizeBaseMean: 15
-  mPacketSizeCeilingMean: 25
-  mSaturationSendCount: 150
-  mGrowthCurvature: 1
+  mPacketSizeCeilingMean: 75
+  mSaturationSendCount: 100
   mPacketSizeJitter: 0.25
   mPacketSizeMin: 5
-  mPacketSizeMax: 40
+  mPacketSizeMax: 100
   mLoadCostWeight: 4
   mMessageTargetId: MainTerminal
   mBaseColors:

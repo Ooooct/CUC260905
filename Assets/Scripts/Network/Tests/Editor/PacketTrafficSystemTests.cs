@@ -2,7 +2,6 @@ using System.Collections.Generic;
 using CUC260905.Message;
 using NUnit.Framework;
 using QFramework;
-using UnityEngine;
 
 namespace CUC260905.Network.Tests
 {
@@ -205,11 +204,10 @@ namespace CUC260905.Network.Tests
         }
 
         [Test]
-        public void SendRandomPacket_PrefersCloserUserTarget()
+        public void SendRandomPacket_SelectsTargetUniformly()
         {
-            // 距离加权目标选取（含 0.05 权重下限）：user-b 距源 0.5（有效权重≈0.487），
-            // user-c 距源 10（密度≈0.005，经下限后有效≈0.05），理论占比约 91% : 9%，
-            // 最近者应显著更常被选中，同时远端仍保有真实选中机会。
+            // 目标选取为均匀随机（已移除距离加权）：对所有已接入的其他用户节点等概率抽样，
+            // 与位置无关；多种子下各候选被选中的次数应接近相等。
             RegisterUser("user-a");
             RegisterUser("user-b");
             RegisterUser("user-c");
@@ -217,13 +215,6 @@ namespace CUC260905.Network.Tests
             Connect("user-a", "server-a");
             Connect("server-a", "user-b");
             Connect("server-a", "user-c");
-
-            FakePositionProvider positions = new FakePositionProvider();
-            positions.Positions["user-a"] = new Vector3(0f, 0f, 0f);
-            positions.Positions["user-b"] = new Vector3(0.5f, 0f, 0f);
-            positions.Positions["user-c"] = new Vector3(10f, 0f, 0f);
-            TrafficTestArchitecture.Interface.RegisterUtility<INodePositionProvider>(positions);
-
             List<PacketTransmittedEvent> sent = new List<PacketTransmittedEvent>();
             IUnRegister registration =
                 TrafficTestArchitecture.Interface.RegisterEvent<PacketTransmittedEvent>(sent.Add);
@@ -237,23 +228,24 @@ namespace CUC260905.Network.Tests
 
             registration.UnRegister();
 
-            int countNear = 0;
-            int countFar = 0;
+            int countUserB = 0;
+            int countUserC = 0;
             foreach (PacketTransmittedEvent packet in sent)
             {
                 if (string.Equals(packet.DestinationNodeId, "user-b", System.StringComparison.Ordinal))
                 {
-                    countNear = countNear + 1;
+                    countUserB = countUserB + 1;
                 }
                 else if (string.Equals(packet.DestinationNodeId, "user-c", System.StringComparison.Ordinal))
                 {
-                    countFar = countFar + 1;
+                    countUserC = countUserC + 1;
                 }
             }
 
             Assert.That(sent, Has.Count.EqualTo(1000));
-            Assert.That(countNear, Is.GreaterThan(countFar));
-            Assert.That(countFar, Is.GreaterThan(0));
+            // 两候选均匀各占约一半（500±N）：宽松对称区间仅验证分布不再按距离偏斜。
+            Assert.That(countUserB, Is.InRange(400, 600));
+            Assert.That(countUserC, Is.InRange(400, 600));
         }
 
         private void RegisterUser(string nodeId)
@@ -283,17 +275,6 @@ namespace CUC260905.Network.Tests
         {
             Assert.That(mModel.TryGetServerCapabilities(nodeId, out ServerNodeCapabilities capabilities), Is.True);
             return capabilities.CurrentDataLoadPerSecond.Value;
-        }
-
-        private sealed class FakePositionProvider : INodePositionProvider
-        {
-            public readonly Dictionary<string, Vector3> Positions =
-                new Dictionary<string, Vector3>(System.StringComparer.Ordinal);
-
-            public bool TryGetNodePosition(string nodeId, out Vector3 position)
-            {
-                return Positions.TryGetValue(nodeId, out position);
-            }
         }
 
         private sealed class TrafficTestArchitecture : Architecture<TrafficTestArchitecture>

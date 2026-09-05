@@ -11,9 +11,9 @@ namespace CUC260905.Network
     /// 用户节点自动生成控制器（表现层）。
     /// 启用自动生成时，先等待首个服务器登记并立即生成第一个用户节点；之后每次生成节拍到来时，由 UserNodeScatterGenerator
     /// 在当前"已外扩半径"内逐一采样一个候选点（Best-Candidate，保持平均且随机），
-    /// 采样范围随已生成数量从内半径逐步外扩到 RangeRadius；
-    /// 过近（MinDistance）分析同时避开已生成用户点与场景内服务器节点
-    /// （服务器位置经 INetworkTopologyModel + INodePositionProvider 每次生成时读取）。
+    /// 采样范围随已生成数量从内半径（默认 0，允许填充圆心）逐步外扩到 RangeRadius，中心更密集、整体更紧凑；
+    /// 新点不得进入服务器节点的 MinDistance 排斥区（服务器仅硬性排斥、不参与分布择优），
+    /// 服务器位置经 INetworkTopologyModel + INodePositionProvider 每次生成时读取。
     /// 实例化统一走架构注册的 IPlacementInstantiator，便于测试替身替换。
     /// </summary>
     [DisallowMultipleComponent]
@@ -30,8 +30,8 @@ namespace CUC260905.Network
         private float mRangeRadius = 10.0f;
         [SerializeField, Min(0.01f), Tooltip("任意两个候选点之间的最小允许距离；同时约束候选点与服务器节点。")]
         private float mMinDistance = 0.5f;
-        [SerializeField, Min(0.0f), Tooltip("候选点距原点允许的最小距离（中心留空，避开原点处的中心对象）。")]
-        private float mInnerRadius = 0.5f;
+        [SerializeField, Min(0.0f), Tooltip("候选点距原点允许的最小距离；0 表示允许填充圆心（布局更紧凑）。")]
+        private float mInnerRadius = 0.0f;
         [SerializeField, Min(0), Tooltip("计划生成数量随机下限（含）。")]
         private int mMinCount = 40;
         [SerializeField, Min(0), Tooltip("计划生成数量随机上限（含）。")]
@@ -208,7 +208,8 @@ namespace CUC260905.Network
         }
 
         /// <summary>
-        /// 收集当前所有服务器节点的世界 x/y 位置，作为生成点的"过近障碍"。
+        /// 收集当前所有服务器节点的世界 x/y 位置，作为生成点的硬性排斥区
+        /// （仅保证新点不进入服务器 MinDistance 范围，不参与分布平均性的择优）。
         /// 每次生成时惰性读取，保证玩家后放置/移除的服务器同样生效；
         /// 拓扑或位置源未就绪时返回空集（此时仅保留用户点之间的最小距离约束）。
         /// </summary>

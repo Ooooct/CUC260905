@@ -11,28 +11,27 @@
 - `Send Interval Min / Max`：两次发送之间的随机秒数（当前不随发送次数增长）。
 - `Packet Size Base Mean / Ceiling Mean`：单包平均大小随发送次数增长的下限与饱和上限（Mb）。
 - `Saturation Send Count`：单包大小增长达到饱和所需的发送次数。
-- `Growth Curvature`：类对数曲线曲率，越大前期增长越快。
 - `Packet Size Jitter`：单包大小在曲线均值上的乘性随机抖动比例（±jitter）。
 - `Packet Size Min / Max`：单包大小的绝对钳位范围（Mb）。
 - `Load Cost Weight`：路径规避拥堵服务器的强度，0 时只按跳数选路。
 - `Message Target Id`：无可行路由时写入的提示终端，默认 `MainTerminal`。
 
-默认值是间隔 `2–4s`（中心 3s，±1s 随机偏移）、包大小基准均值 `15Mb`、饱和均值 `25Mb`、饱和次数 `150`、
-曲率 `1`、抖动 `0.25`、钳位 `5–40Mb`、负载权重 `4`。单包大小最大不超过 `40Mb`。
+默认值是间隔 `2–4s`（中心 3s，±1s 随机偏移）、包大小基准均值 `15Mb`、饱和均值 `50Mb`、饱和次数 `300`、
+曲率 `1`、抖动 `0.25`、钳位 `5–75Mb`、负载权重 `4`。单包大小最大不超过 `75Mb`。
 服务器容量继续取 `NetworkNodeRegistrar` 注入的 `DataProcessingPerSecond`（及其升级配置），不在本功能中改写。
 
 ## 单包大小增长（按发送次数）
 
-每个用户节点累计已发送次数 n 驱动单包平均大小沿类对数曲线增长：
+每个用户节点累计已发送次数 n 驱动单包平均大小线性增长：
 
 ```
-t(n) = ln(1 + k·n) / ln(1 + k·N)
+t(n) = clamp(n / N)
 平均大小(n) = BaseMean + (CeilingMean − BaseMean) · t(n)
 实际大小 = clamp(平均大小(n) · (1 + Jitter·U(−1,1)), Min, Max)
 ```
 
-n=0 时平均大小等于基准均值，随发送次数前期快速上升、后期趋缓，n≥N 后钳位到饱和均值。
-实际单包在曲线均值附近按乘性比例随机抖动（保留随机波动），并受绝对钳位约束，最大不超过 `40Mb`。
+n=0 时平均大小等于基准均值，随发送次数线性增长，n≥N 后钳位到饱和均值。
+实际单包在曲线均值附近按乘性比例随机抖动（保留随机波动），并受绝对钳位约束，最大不超过 `75Mb`。
 实现为纯逻辑 `SendPaceCurve`（`Assets/Scripts/Network/Core/`）；`UserNodeController` 按 `mSendCount` 采样后递增。
 发送间隔固定为随机 `2–4s`（3s ±1s），不随发送次数增长；频率增长曲线后续接入时复用同一 `SendPaceCurve`。
 
@@ -78,10 +77,11 @@ n=0 时平均大小等于基准均值，随发送次数前期快速上升、后�
 - 所有路径超出上限时，拒绝发送并发布不可达消息与事件，事件包含被吞吐上限拒绝的服务器；
 - 目的端必须是用户节点：`user → server` 被拒（`DestinationNotUserNode`），随机发送只会在其他用户节点之间选取目标（没有其他用户节点时返回 `DestinationUnavailable`，且不发布消息/事件，属静默跳过）；
 - 不允许自我发送：显式 `user → user`（同节点）被拒（`SelfSendForbidden`），随机发送在多种子下从不指向源节点；
+- 目标选取为均匀随机：`SendRandomPacket` 对全部已接入的其他用户节点等概率抽样（与位置无关），多种子下各候选被选次数接近相等；
 - 总体负载的不可达惩罚、按秒衰减与首次达到 100% 的失败阈值。
 
 `Assets/Scripts/Network/Tests/Editor/SendPaceCurveTests.cs` 覆盖单包大小的对数增长：
-归一化进度参考值与单调性、饱和与越界钳位、均值边界、乘性抖动带、默认参数下不超过 40Mb、同种子可复现、非法参数防御。
+归一化进度参考值与单调性、饱和与越界钳位、均值边界、乘性抖动带、默认参数下不超过 75Mb、同种子可复现、非法参数防御。
 
 `Assets/Scripts/Network/Tests/Editor/DeploymentAccessTimeTests.cs` 覆盖部署接入时间：
 
