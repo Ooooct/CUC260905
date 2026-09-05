@@ -10,20 +10,20 @@ namespace CUC260905.Interaction
     public sealed class InteractionArchitecture : Architecture<InteractionArchitecture>
     {
         private static bool sConfigured;
-        private static InteractionInputConfiguration sConfiguration;
+        private static InputConfig sConfiguration;
 
         /// <summary>在 Architecture 初始化前写入场景专属的 Camera 与交互参数。</summary>
-        public static void Configure(InteractionInputConfiguration configuration)
+        public static void Configure(InputConfig configuration)
         {
             if (mArchitecture != null || sConfigured)
             {
                 throw new InvalidOperationException(
-                    "InteractionArchitecture 已完成或正在等待装配；一个场景只能存在一个 InteractionInputController。");
+                    "InteractionArchitecture 已完成或正在等待装配；一个场景只能存在一个 InputController。");
             }
 
             if (configuration.Camera == null)
             {
-                throw new ArgumentNullException(nameof(configuration), "InteractionInputController 必须指定 Camera。");
+                throw new ArgumentNullException(nameof(configuration), "InputController 必须指定 Camera。");
             }
 
             sConfiguration = configuration;
@@ -51,15 +51,15 @@ namespace CUC260905.Interaction
                     "必须先调用 InteractionArchitecture.Configure，再访问 InteractionArchitecture.Interface。");
             }
 
-            IInteractionIntentSinkResolverUtility sinkResolver =
-                new ComponentInteractionSinkResolverUtility();
-            IInteractionTargetResolverUtility targetResolver = CreateTargetResolver();
+            IIntentSinkResolver sinkResolver =
+                new ComponentSinkResolver();
+            ITargetResolver targetResolver = CreateTargetResolver();
 
             // Utility 先注册，随后 Model 和 System 可在各自 OnInit 中按接口获取依赖。
             RegisterUtility<IInputSourceUtility>(new LegacyInputUtility());
-            RegisterUtility<IInteractionIntentSinkResolverUtility>(sinkResolver);
-            RegisterUtility<IInteractionTargetResolverUtility>(targetResolver);
-            RegisterUtility<IInteractionDispatchUtility>(new InteractionDispatchUtility(sinkResolver));
+            RegisterUtility<IIntentSinkResolver>(sinkResolver);
+            RegisterUtility<ITargetResolver>(targetResolver);
+            RegisterUtility<IIntentDispatcher>(new IntentDispatcher(sinkResolver));
 
             RegisterModel<IPointerIntentModel>(
                 new PointerIntentModel(sConfiguration.DragThresholdPixels));
@@ -73,17 +73,17 @@ namespace CUC260905.Interaction
             sConfiguration = default;
         }
 
-        private static IInteractionTargetResolverUtility CreateTargetResolver()
+        private static ITargetResolver CreateTargetResolver()
         {
             if (sConfiguration.PhysicsMode == InteractionPhysicsMode.Physics2D)
             {
-                return new Physics2DTargetResolverUtility(
+                return new Physics2DTargetResolver(
                     sConfiguration.Camera,
                     sConfiguration.LayerMask,
                     sConfiguration.MaxDistance);
             }
 
-            return new Physics3DTargetResolverUtility(
+            return new Physics3DTargetResolver(
                 sConfiguration.Camera,
                 sConfiguration.LayerMask,
                 sConfiguration.MaxDistance);

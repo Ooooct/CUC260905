@@ -11,9 +11,9 @@ namespace CUC260905.Interaction
     }
 
     /// <summary>向 Resolver 提供目标本地登记的意图接收器。</summary>
-    public interface IInteractionIntentSinkProvider
+    public interface IIntentSinkProvider
     {
-        bool TryGetIntentSink<TIntent>(out IInteractionIntentSink<TIntent> sink)
+        bool TryGetIntentSink<TIntent>(out IIntentSink<TIntent> sink)
             where TIntent : struct, IInteractionIntent;
     }
 
@@ -22,7 +22,7 @@ namespace CUC260905.Interaction
     /// 它不解释任何输入，也不执行业务行为；只登记同一 GameObject 上的 Sink。
     /// </summary>
     [DisallowMultipleComponent]
-    public sealed class InteractionTarget : MonoBehaviour, IInteractionTarget, IInteractionIntentSinkProvider
+    public sealed class InteractionTarget : MonoBehaviour, IInteractionTarget, IIntentSinkProvider
     {
         // Key 是意图类型，Value 是实现该类型 Sink 的同物体组件。
         private readonly Dictionary<Type, object> mIntentSinks = new Dictionary<Type, object>();
@@ -76,11 +76,11 @@ namespace CUC260905.Interaction
         }
 
         /// <summary>只按意图类型返回已登记 Sink，不执行任何查找策略或业务判断。</summary>
-        public bool TryGetIntentSink<TIntent>(out IInteractionIntentSink<TIntent> sink)
+        public bool TryGetIntentSink<TIntent>(out IIntentSink<TIntent> sink)
             where TIntent : struct, IInteractionIntent
         {
             if (mIntentSinks.TryGetValue(typeof(TIntent), out object value) &&
-                value is IInteractionIntentSink<TIntent> typedSink)
+                value is IIntentSink<TIntent> typedSink)
             {
                 sink = typedSink;
                 return true;
@@ -93,7 +93,7 @@ namespace CUC260905.Interaction
         private static bool IsIntentSinkInterface(Type interfaceType)
         {
             return interfaceType.IsGenericType &&
-                   interfaceType.GetGenericTypeDefinition() == typeof(IInteractionIntentSink<>);
+                   interfaceType.GetGenericTypeDefinition() == typeof(IIntentSink<>);
         }
     }
 }

@@ -4,7 +4,7 @@ using QFramework;
 
 namespace CUC260905.Interaction
 {
-    /// <summary>QFramework 输入协调 System；由 Controller 在 Unity Update 中驱动。</summary>
+    /// <summary>输入信息的解释器</summary>
     public interface IInteractionInputSystem : ISystem
     {
         void ProcessFrame(float unscaledTime);
@@ -21,18 +21,18 @@ namespace CUC260905.Interaction
         private readonly List<PointerSignal> mSignals = new List<PointerSignal>();
 
         private IInputSourceUtility mInputUtility;
-        private IInteractionTargetResolverUtility mTargetResolverUtility;
+        private ITargetResolver mTargetResolver;
         private IPointerIntentModel mPointerIntentModel;
 
         protected override void OnInit()
         {
             // 依赖由 Architecture 统一注册，System 不创建具体 Unity Adapter。
             mInputUtility = this.GetUtility<IInputSourceUtility>();
-            mTargetResolverUtility = this.GetUtility<IInteractionTargetResolverUtility>();
+            mTargetResolver = this.GetUtility<ITargetResolver>();
             mPointerIntentModel = this.GetModel<IPointerIntentModel>();
 
             if (mInputUtility == null ||
-                mTargetResolverUtility == null ||
+                mTargetResolver == null ||
                 mPointerIntentModel == null)
             {
                 throw new InvalidOperationException(
@@ -49,7 +49,7 @@ namespace CUC260905.Interaction
             foreach (PointerSignal signal in mSignals)
             {
                 // 未命中时 Hit 仍尽量保留 Ray，供拖拽能力处理自由空间位置。
-                mTargetResolverUtility.TryResolve(signal, out InteractionHit hit);
+                mTargetResolver.TryResolve(signal, out InteractionHit hit);
                 mPointerIntentModel.Process(signal, hit);
             }
         }

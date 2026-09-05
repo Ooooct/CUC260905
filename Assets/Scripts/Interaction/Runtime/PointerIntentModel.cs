@@ -6,7 +6,7 @@ using UnityEngine;
 namespace CUC260905.Interaction
 {
     /// <summary>将已解释的意图送往下一层，不包含任何业务调度规则。</summary>
-    public interface IInteractionIntentEmitter
+    public interface IIntentEmitter
     {
         InteractionResult Emit<TIntent>(IInteractionTarget target, in TIntent intent)
             where TIntent : struct, IInteractionIntent;
@@ -22,12 +22,12 @@ namespace CUC260905.Interaction
 
     /// <summary>
     /// 输入域 Model。按 PointerId 与按键保存会话、悬浮与拖拽状态。
-    /// 不认识 Unity 生命周期或具体业务对象；意图只经 IInteractionIntentEmitter 离开本层。
+    /// 不认识 Unity 生命周期或具体业务对象；意图只经 IIntentEmitter 离开本层。
     /// </summary>
     public sealed class PointerIntentModel : AbstractModel, IPointerIntentModel
     {
         // 由 Architecture 注入的调度 Utility；Model 只依赖其输出端口。
-        private IInteractionIntentEmitter mEmitter;
+        private IIntentEmitter mEmitter;
         // 使用平方距离比较，避免每个 Move 信号进行开方。
         private readonly float mDragThresholdSqr;
         // 同一指针可同时持有不同按键；因此会话键必须包含 PointerId 与 Button。
@@ -119,11 +119,11 @@ namespace CUC260905.Interaction
 
         protected override void OnInit()
         {
-            mEmitter = this.GetUtility<IInteractionDispatchUtility>();
+            mEmitter = this.GetUtility<IIntentDispatcher>();
             if (mEmitter == null)
             {
                 throw new InvalidOperationException(
-                    "PointerIntentModel 初始化前必须注册 IInteractionDispatchUtility。");
+                    "PointerIntentModel 初始化前必须注册 IIntentDispatcher。");
             }
         }
 

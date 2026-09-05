@@ -112,7 +112,7 @@ namespace CUC260905.Tests
             }
         }
 
-        private sealed class RecordingDispatchUtility : IInteractionDispatchUtility
+        private sealed class RecordingDispatchUtility : IIntentDispatcher
         {
             public readonly List<string> Events = new List<string>();
 
@@ -144,7 +144,7 @@ namespace CUC260905.Tests
 
         private sealed class InteractionTestArchitecture : Architecture<InteractionTestArchitecture>
         {
-            private static IInteractionDispatchUtility sDispatchUtility;
+            private static IIntentDispatcher sDispatchUtility;
             private static IPointerIntentModel sModel;
 
             public InteractionTestArchitecture()
@@ -152,7 +152,7 @@ namespace CUC260905.Tests
             }
 
             public static void Configure(
-                IInteractionDispatchUtility dispatchUtility,
+                IIntentDispatcher dispatchUtility,
                 IPointerIntentModel model)
             {
                 sDispatchUtility = dispatchUtility;
@@ -172,7 +172,7 @@ namespace CUC260905.Tests
 
             protected override void Init()
             {
-                RegisterUtility<IInteractionDispatchUtility>(sDispatchUtility);
+                RegisterUtility<IIntentDispatcher>(sDispatchUtility);
                 RegisterModel<IPointerIntentModel>(sModel);
             }
         }
