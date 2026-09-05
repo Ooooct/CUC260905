@@ -19,18 +19,22 @@ namespace CUC260905.Interaction
         [Header("Intent Model")]
         [SerializeField] private float mDragThresholdPixels = 8.0f;
 
+        [Header("Placement")]
+        [SerializeField] private float mPlacementZ = 0.0f;
+
         private IInteractionInputSystem mInputSystem;
         private bool mOwnsArchitecture;
 
         private void Awake()
         {
             // 必须在首次访问 Interface 前配置，避免静态 Architecture 绑定错误场景 Camera。
-            InteractionArchitecture.Configure(new InputConfig(
+            GameArchitecture.Configure(new InputConfig(
                 mCamera,
                 mPhysicsMode,
                 mLayerMask,
                 mMaxDistance,
-                mDragThresholdPixels));
+                mDragThresholdPixels,
+                mPlacementZ));
 
             mInputSystem = this.GetSystem<IInteractionInputSystem>();
             mOwnsArchitecture = true;
@@ -54,13 +58,13 @@ namespace CUC260905.Interaction
         {
             if (mOwnsArchitecture)
             {
-                InteractionArchitecture.Deinitialize();
+                GameArchitecture.Deinitialize();
             }
         }
 
         IArchitecture IBelongToArchitecture.GetArchitecture()
         {
-            return InteractionArchitecture.Interface;
+            return GameArchitecture.Interface;
         }
     }
 }

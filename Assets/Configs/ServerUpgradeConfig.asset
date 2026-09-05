@@ -1,0 +1,68 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e38ffbb3e2468ee4ca0bf0af8ce7dd48, type: 3}
+  m_Name: ServerUpgradeConfig
+  m_EditorClassIdentifier: 
+  mDataThroughputLevels:
+  - AppliedValue: 100
+    MoneyCost: 0
+  - AppliedValue: 220
+    MoneyCost: 50
+  - AppliedValue: 340
+    MoneyCost: 100
+  - AppliedValue: 460
+    MoneyCost: 200
+  - AppliedValue: 580
+    MoneyCost: 300
+  - AppliedValue: 700
+    MoneyCost: 450
+  - AppliedValue: 820
+    MoneyCost: 650
+  - AppliedValue: 940
+    MoneyCost: 900
+  - AppliedValue: 1060
+    MoneyCost: 1300
+  - AppliedValue: 1180
+    MoneyCost: 1800
+  - AppliedValue: 1300
+    MoneyCost: 2500
+  - AppliedValue: 1420
+    MoneyCost: 3500
+  - AppliedValue: 1540
+    MoneyCost: 5000
+  mMaxConnectionLevels:
+  - AppliedValue: 5
+    MoneyCost: 0
+  - AppliedValue: 10
+    MoneyCost: 30
+  - AppliedValue: 15
+    MoneyCost: 50
+  - AppliedValue: 20
+    MoneyCost: 100
+  - AppliedValue: 25
+    MoneyCost: 150
+  - AppliedValue: 30
+    MoneyCost: 250
+  - AppliedValue: 35
+    MoneyCost: 350
+  - AppliedValue: 40
+    MoneyCost: 450
+  - AppliedValue: 45
+    MoneyCost: 650
+  - AppliedValue: 50
+    MoneyCost: 900
+  - AppliedValue: 55
+    MoneyCost: 1300
+  - AppliedValue: 60
+    MoneyCost: 1800
+  - AppliedValue: 65
+    MoneyCost: 2500

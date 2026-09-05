@@ -10,9 +10,11 @@ Shader "CUC260905/Sprite Outline 2D"
         [PerRendererData] _EnableExternalAlpha ("Enable External Alpha", Float) = 0
 
         _OuterOutlineColor ("Outer Outline Color", Color) = (1, 0.82, 0.18, 1)
-        _OuterOutlineWidth ("Outer Outline Width (Pixels)", Range(0, 16)) = 1
+        _OuterOutlineWidth ("Outer Outline Width (Pixels)", Range(0, 64)) = 1
+        [HideInInspector] _OuterMeshCenter ("Outer Mesh Center", Vector) = (0, 0, 0, 0)
+        [HideInInspector] _OuterMeshScale ("Outer Mesh Scale", Vector) = (1, 1, 0, 0)
         _InnerOutlineColor ("Inner Outline Color", Color) = (1, 1, 1, 0)
-        _InnerOutlineWidth ("Inner Outline Width (Pixels)", Range(0, 16)) = 0
+        _InnerOutlineWidth ("Inner Outline Width (Pixels)", Range(0, 64)) = 0
     }
 
     SubShader
@@ -33,6 +35,50 @@ Shader "CUC260905/Sprite Outline 2D"
 
         Pass
         {
+            Name "OuterOutline"
+
+            CGPROGRAM
+            #pragma vertex vertOuterOutline
+            #pragma fragment fragOuterOutline
+            #pragma target 2.0
+            #pragma multi_compile_instancing
+            #pragma multi_compile _ PIXELSNAP_ON
+            #pragma multi_compile _ ETC1_EXTERNAL_ALPHA
+
+            #include "UnitySprites.cginc"
+
+            fixed4 _OuterOutlineColor;
+            float _OuterOutlineWidth;
+            float4 _OuterMeshCenter;
+            float4 _OuterMeshScale;
+
+            v2f vertOuterOutline(appdata_t input)
+            {
+                input.vertex.xy = _OuterMeshCenter.xy
+                    + (input.vertex.xy - _OuterMeshCenter.xy) * _OuterMeshScale.xy;
+                return SpriteVert(input);
+            }
+
+            fixed4 fragOuterOutline(v2f input) : SV_Target
+            {
+                if (_OuterOutlineWidth <= 0.0)
+                {
+                    discard;
+                }
+
+                fixed sourceAlpha = SampleSpriteTexture(input.texcoord).a * input.color.a;
+                fixed4 outlineColor = _OuterOutlineColor;
+                outlineColor.a *= sourceAlpha;
+                outlineColor.rgb *= outlineColor.a;
+                return outlineColor;
+            }
+            ENDCG
+        }
+
+        Pass
+        {
+            Name "SpriteAndInnerOutline"
+
             CGPROGRAM
             #pragma vertex SpriteVert
             #pragma fragment frag
@@ -43,8 +89,6 @@ Shader "CUC260905/Sprite Outline 2D"
 
             #include "UnitySprites.cginc"
 
-            fixed4 _OuterOutlineColor;
-            float _OuterOutlineWidth;
             fixed4 _InnerOutlineColor;
             float _InnerOutlineWidth;
             float4 _MainTex_TexelSize;
@@ -52,22 +96,6 @@ Shader "CUC260905/Sprite Outline 2D"
             float SampleAlpha(v2f input, float2 offset)
             {
                 return SampleSpriteTexture(input.texcoord + offset * _MainTex_TexelSize.xy).a * input.color.a;
-            }
-
-            float MaxNeighbourAlpha(v2f input, float width)
-            {
-                float2 diagonal = float2(width, width);
-                float maxAlpha = 0.0;
-
-                maxAlpha = max(maxAlpha, SampleAlpha(input, float2(width, 0.0)));
-                maxAlpha = max(maxAlpha, SampleAlpha(input, float2(-width, 0.0)));
-                maxAlpha = max(maxAlpha, SampleAlpha(input, float2(0.0, width)));
-                maxAlpha = max(maxAlpha, SampleAlpha(input, float2(0.0, -width)));
-                maxAlpha = max(maxAlpha, SampleAlpha(input, diagonal));
-                maxAlpha = max(maxAlpha, SampleAlpha(input, float2(-diagonal.x, diagonal.y)));
-                maxAlpha = max(maxAlpha, SampleAlpha(input, float2(diagonal.x, -diagonal.y)));
-                maxAlpha = max(maxAlpha, SampleAlpha(input, -diagonal));
-                return maxAlpha;
             }
 
             float MinNeighbourAlpha(v2f input, float width)
@@ -102,13 +130,7 @@ Shader "CUC260905/Sprite Outline 2D"
             {
                 fixed4 spriteColor = SampleSpriteTexture(input.texcoord) * input.color;
                 float spriteAlpha = spriteColor.a;
-                float outerMask = 0.0;
                 float innerMask = 0.0;
-
-                if (_OuterOutlineWidth > 0.0)
-                {
-                    outerMask = (1.0 - spriteAlpha) * MaxNeighbourAlpha(input, _OuterOutlineWidth);
-                }
 
                 if (_InnerOutlineWidth > 0.0)
                 {
@@ -116,14 +138,10 @@ Shader "CUC260905/Sprite Outline 2D"
                 }
 
                 fixed4 result = Premultiply(spriteColor);
-                fixed4 outerColor = _OuterOutlineColor;
                 fixed4 innerColor = _InnerOutlineColor;
-                outerColor.a *= input.color.a;
                 innerColor.a *= input.color.a;
-                outerColor = Premultiply(outerColor);
                 innerColor = Premultiply(innerColor);
 
-                result = BlendPremultiplied(result, outerColor, outerMask);
                 result = BlendPremultiplied(result, innerColor, innerMask);
                 return result;
             }
